@@ -166,8 +166,13 @@ and permission revocations are refreshed for reads, writes, upload and private
 recording preview. Crew does not receive publication access through this bridge.
 
 Song drafts belong to their exact creator, including when that creator is an
-Owner. Directions may all be empty. BNL returns an editable title, lyrics and
-Suno prompt, with independent lyric/style regeneration and Undo. Lyrics are
+Owner. Directions may all be empty. BNL returns selectable, read-only title, lyrics
+and Suno prompt, with independent lyric/style regeneration and Undo. Successful
+songs save automatically to the creator's private archive, which keeps the newest
+40 tracks. A successful new song replaces the oldest when full; regeneration and
+Undo update the selected track. Tracks can be sorted and reopened without a model
+call. Copy the text for editing outside BARCODE. Owner Home and the persistent Owner
+menu open the BNL song generator directly, separately from Broadcast Ballads. Lyrics are
 limited to 2,000 whitespace-separated words and 40,000 characters; the musical
 structure targets five minutes or less. Final recording duration is determined
 by the recording tool. There is no sharing, audio generation or publication.
@@ -189,10 +194,11 @@ changes. The service refuses startup until the new additive schema is present;
 it never migrates implicitly. Unupgraded services return an unavailable account
 tool state. Do not grant real Crew access as part of a test. See
 [member-auth operations](services/member-auth/README.md) for the migration command.
-After the Owner merges, verify service health, bot commit/service status, and a
-private Owner generation before assigning Crew tools. Roll back code to the prior
-commits if needed; retain the additive tables and receipt history rather than
-restoring or deleting private account data.
+After release, verify service health, bot commit/service status, and private Owner
+generation/archive selection before assigning Crew tools. The archive requires
+member tool schema version 2; keep that compatible account-service release and
+current database when rolling the website back. Retain archive data and receipt
+history rather than restoring older account data or reviving sessions.
 
 Insights state their source coverage and unavailable measurements. Artist rows
 describe public credit groups, not verified individual identity. Pacing compares

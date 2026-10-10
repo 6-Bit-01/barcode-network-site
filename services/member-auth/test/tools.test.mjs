@@ -8,7 +8,7 @@ import { createMemberAuth } from '../auth.mjs';
 import { createMemberHandler } from '../handler.mjs';
 const origin='https://www.barcode-network.com',baseURL=origin+'/api/member/auth',serviceToken='private-crew-tools-test-token-12345678901234';
 const songs='/api/member/tools/songs',claim='/api/member/worker/songs/claim',receipt='/api/member/worker/songs/receipt';
-const empty={revision:0,title:'',lyrics:'',style:'',previous:null,pending:null,errorCode:null};
+const empty={revision:0,title:'',lyrics:'',style:'',previous:null,pending:null,errorCode:null,selectedTrackId:null,options:{idea:'',musicalDirection:'',mood:'',lengthStructure:'',revisionInstructions:''},tracks:[]};
 const seed={title:'Original',lyrics:'First verse\nSecond line',style:'Exact original style\n'};
 const command=(expectedRevision=0,kind='generate',fields={})=>({requestId:randomUUID(),expectedRevision,kind,...fields});
 async function fixture(t){
@@ -40,8 +40,8 @@ test('registered tools accept an empty direction and only project the current cr
  assert.equal((await submit(a,{...command(),creatorId:a.owner.id})).status,400);
  assert.equal((await a.request('/api/member/owner/tools/songs?targetId='+a.crew.id,undefined,a.owner.cookie)).status,404);
 });
-test('edited base is atomic, revision protects concurrent commands and UUID retries are bound to the body',async t=>{
- const a=await fixture(t),b=command(0,'generate',{base:seed});const r=await submit(a,b);assert.equal(r.status,200);const queued=await r.json();assert.equal(queued.draft.lyrics,seed.lyrics);
+test('server-owned base is atomic, revision protects concurrent commands and UUID retries are bound to the body',async t=>{
+ const a=await fixture(t),b=command(0,'generate',{base:{title:'Owner title',lyrics:'',style:''}});const r=await submit(a,b);assert.equal(r.status,200);const queued=await r.json();assert.equal(queued.draft.lyrics,'');
  assert.deepEqual(await(await submit(a,b)).json(),queued);assert.equal((await submit(a,{...b,options:{idea:'different'}})).status,409);
  assert.equal((await submit(a,command(0))).status,409);assert.equal((await submit(a,command(1))).status,409);
  assert.equal(a.database.prepare('SELECT count(*) n FROM member_song_command').get().n,1);
@@ -49,11 +49,11 @@ test('edited base is atomic, revision protects concurrent commands and UUID retr
  const revision=(await(await read(a)).json()).draft.revision;
  const simultaneous=await Promise.all([submit(a,command(revision)),submit(a,command(revision))]);assert.deepEqual(simultaneous.map(r=>r.status).sort(),[200,409]);
 });
-test('lyrics whitespace word bounds permit 2000 and reject 2001 in edited and generated results',async t=>{
- const a=await fixture(t),lyrics=('word\t').repeat(2000).trimEnd();assert.equal((await submit(a,command(0,'generate',{base:{...seed,lyrics}}))).status,200);
- const c=await take(a);assert.equal(c.base.lyrics,lyrics);assert.equal((await finish(a,c,{...seed,lyrics:lyrics+' next'})).status,400);
+test('lyrics whitespace word bounds permit2000 generated words and reject2001 request and result words',async t=>{
+ const a=await fixture(t),lyrics=('word\t').repeat(2000).trimEnd();assert.equal((await submit(a,command())).status,200);
+ const c=await take(a);assert.equal(c.base.lyrics,'');assert.equal((await finish(a,c,{...seed,lyrics:lyrics+' next'})).status,400);
  assert.equal((await a.request(receipt,{commandId:c.id,leaseId:c.leaseId,outcome:'failed',errorCode:'INVALID_RESULT'})).status,200);
- const state=(await(await read(a)).json()).draft;assert.equal(state.lyrics,lyrics);assert.equal(state.errorCode,'INVALID_RESULT');
+ const state=(await(await read(a)).json()).draft;assert.equal(state.lyrics,'');assert.equal(state.errorCode,'INVALID_RESULT');
  assert.equal((await submit(a,command(state.revision,'generate',{base:{...seed,lyrics:lyrics+' next'}}))).status,400);
  assert.equal((await submit(a,command(state.revision,'generate',{base:{...seed,lyrics:'x'.repeat(40001)}}))).status,400);
  assert.equal((await submit(a,command(state.revision,'generate',{base:{...seed,title:'x'.repeat(161)}}))).status,400);
@@ -62,7 +62,7 @@ test('lyrics whitespace word bounds permit 2000 and reject 2001 in edited and ge
 });
 test('partial regeneration rejects worker replacement of the title or untouched component and Undo restores the previous pair',async t=>{
  const a=await fixture(t);let state=await generated(a);
- const edited={title:'Edited title',lyrics:'Edited lyrics\n ',style:'  exact style\n'};
+ const edited={...seed,title:'Edited title'};
  assert.equal((await submit(a,command(state.revision,'lyrics',{base:edited,options:{revisionInstructions:'Change only lyrics'}}))).status,200);let c=await take(a);
  assert.equal((await finish(a,c,{title:'wrong title',lyrics:'Revised lyrics',style:edited.style})).status,400);
  assert.equal((await finish(a,c,{title:edited.title,lyrics:'Revised lyrics',style:'trimmed'})).status,400);
@@ -75,8 +75,8 @@ test('partial regeneration rejects worker replacement of the title or untouched 
  const restored=(await(await read(a)).json()).draft;assert.equal(restored.title,edited.title);assert.equal(restored.lyrics,'Revised lyrics');assert.equal(restored.style,edited.style);assert.equal(restored.pending,null);
  assert.deepEqual((await(await a.request(claim,{})).json()).commands,[]);
 });
-test('model failure retains edited base and previous successful pair without exposing arbitrary errors',async t=>{
- const a=await fixture(t),state=await generated(a),edited={title:'Keep title',lyrics:'Keep these lyrics',style:'Keep style'};
+test('model failure retains server-owned song and previous successful pair without changing the archive',async t=>{
+ const a=await fixture(t),state=await generated(a),edited={...seed,title:'Keep title'};
  assert.equal((await submit(a,command(state.revision,'generate',{base:edited}))).status,200);const c=await take(a);
  assert.equal((await a.request(receipt,{commandId:c.id,leaseId:c.leaseId,outcome:'failed',errorCode:'provider-secret-error'})).status,400);
  const body={commandId:c.id,leaseId:c.leaseId,outcome:'failed',errorCode:'PROVIDER_UNAVAILABLE'},r=await a.request(receipt,body);assert.equal(r.status,200);const saved=await r.json();assert.deepEqual(await(await a.request(receipt,body)).json(),saved);
@@ -125,11 +125,63 @@ test('signup month aggregates include current genuine accounts with mixed ISO an
 });
 test('draft acceptance and worker application roll back if the important action audit cannot be committed',async t=>{
  const a=await fixture(t);a.database.exec("CREATE TRIGGER song_test_audit_failure BEFORE INSERT ON member_song_audit BEGIN SELECT RAISE(ABORT,'synthetic audit failure');END");
- assert.equal((await submit(a,command(0,'generate',{base:seed}))).status,503);assert.deepEqual((await(await read(a)).json()).draft,empty);assert.equal(a.database.prepare('SELECT count(*) n FROM member_song_command').get().n,0);
+ assert.equal((await submit(a,command())).status,503);assert.deepEqual((await(await read(a)).json()).draft,empty);assert.equal(a.database.prepare('SELECT count(*) n FROM member_song_command').get().n,0);
  a.database.exec('DROP TRIGGER song_test_audit_failure');await submit(a,command());const c=await take(a);a.database.exec("CREATE TRIGGER song_test_audit_failure BEFORE INSERT ON member_song_audit BEGIN SELECT RAISE(ABORT,'synthetic audit failure');END");assert.equal((await finish(a,c)).status,503);assert.equal((await(await read(a)).json()).draft.lyrics,'');assert.equal(a.database.prepare('SELECT status FROM member_song_command WHERE id=?').get(c.id).status,'leased');
 });
 test('tool migration requires explicit upgrade, preserves all existing identity authority and rejects missing constraints',async t=>{
  const a=await fixture(t),tables=['user','session','member_access','member_artist_state','member_mail_outbox'];const before=Object.fromEntries(tables.map(table=>[table,a.database.prepare('SELECT * FROM '+table+' ORDER BY rowid').all()]));await a.migrate();await a.assertReady();for(const table of tables)assert.deepEqual(a.database.prepare('SELECT * FROM '+table+' ORDER BY rowid').all(),before[table]);
- a.database.exec('DROP TRIGGER member_song_user_insert;DROP TRIGGER member_song_access_revoke;DROP TRIGGER member_song_session_revoke;DROP TRIGGER member_song_verification_revoke;DROP TABLE member_song_audit;DROP TABLE member_song_command;DROP TABLE member_song_draft;DROP TABLE member_tool_schema');await assert.rejects(()=>a.assertReady(),/Explicit.*tool/i);await a.migrate();await a.assertReady();assert.deepEqual((await(await read(a)).json()).draft,empty);
+ a.database.exec('DROP TRIGGER member_song_user_insert;DROP TRIGGER member_song_access_revoke;DROP TRIGGER member_song_session_revoke;DROP TRIGGER member_song_verification_revoke;DROP TABLE member_song_audit;DROP TABLE member_song_command;DROP TABLE member_song_draft;DROP TABLE member_song_archive;DROP TABLE member_tool_schema');await assert.rejects(()=>a.assertReady(),/Explicit.*tool/i);await a.migrate();await a.assertReady();assert.deepEqual((await(await read(a)).json()).draft,empty);
  a.database.exec('DROP INDEX member_song_request_unique;CREATE INDEX member_song_request_unique ON member_song_command(user_id,request_id)');await assert.rejects(()=>a.assertReady(),/tool.*constraints/i);
+});
+
+
+test('successful songs automatically archive privately and selection restores server text/options without a model job',async t=>{
+ const a=await fixture(t);const options={idea:'Archive first',mood:'Bright'};await submit(a,command(0,'generate',{options}));let c=await take(a);await finish(a,c,seed);
+ let first=(await(await read(a)).json()).draft;assert.equal(first.tracks.length,1);assert.equal(first.selectedTrackId,first.tracks[0].id);assert.deepEqual(Object.keys(first.tracks[0]),['id','title','createdAt','updatedAt']);assert.equal(first.options.idea,'Archive first');
+ await submit(a,command(first.revision,'generate',{options:{idea:'Second'}}));c=await take(a);await finish(a,c,{title:'Second',lyrics:'Another verse',style:'Another style'});let second=(await(await read(a)).json()).draft;
+ assert.equal(second.tracks.length,2);assert.notEqual(second.selectedTrackId,first.selectedTrackId);
+ const select=command(second.revision,'select',{trackId:first.selectedTrackId});const response=await submit(a,select);assert.equal(response.status,200);const selected=(await response.json()).draft;assert.equal(selected.lyrics,seed.lyrics);assert.equal(selected.style,seed.style);assert.equal(selected.options.idea,'Archive first');assert.equal(selected.previous,null);assert.equal(selected.selectedTrackId,first.selectedTrackId);assert.deepEqual(await(await submit(a,select)).json(),{draft:selected});assert.deepEqual((await(await a.request(claim,{})).json()).commands,[]);
+ assert.equal((await submit(a,command(0,'select',{trackId:first.selectedTrackId}),a.owner)).status,409);assert.equal((await(await read(a,a.owner)).json()).draft.tracks.length,0);
+ assert.equal((await submit(a,command(selected.revision,'lyrics',{base:{...seed,lyrics:'Handcrafted replacement'}}))).status,409);assert.equal((await submit(a,command(selected.revision,'generate',{base:{...seed,style:'Handcrafted replacement'}}))).status,409);
+ assert.equal((await submit(a,command(selected.revision,'lyrics',{options:{revisionInstructions:'Make it sharper'}}))).status,200);assert.equal((await submit(a,command(selected.revision+1,'select',{trackId:second.selectedTrackId}))).status,409);
+ c=await take(a);assert.equal((await finish(a,c,{...seed,lyrics:'A sharper verse'})).status,200);let revised=(await(await read(a)).json()).draft;assert.equal(revised.tracks.length,2);assert.equal(revised.selectedTrackId,first.selectedTrackId);assert.equal((await submit(a,command(revised.revision,'undo'))).status,200);revised=(await(await read(a)).json()).draft;assert.equal(revised.lyrics,seed.lyrics);assert.equal(revised.tracks.length,2);
+ await submit(a,command(revised.revision,'select',{trackId:second.selectedTrackId}));second=(await(await read(a)).json()).draft;await submit(a,command(second.revision,'select',{trackId:first.selectedTrackId}));assert.equal((await(await read(a)).json()).draft.lyrics,seed.lyrics);
+});
+test('archive keeps newest40 replacing only the successful new song creator oldest and retains idempotency',async t=>{
+ const a=await fixture(t);let state=(await(await read(a)).json()).draft,oldest;for(let n=0;n<41;n++){assert.equal((await submit(a,command(state.revision,'generate',{options:{idea:'Track '+n}}))).status,200);const c=await take(a);const body={commandId:c.id,leaseId:c.leaseId,outcome:'applied',result:{title:'Track '+n,lyrics:'Verse '+n,style:'Style '+n}};const response=await a.request(receipt,body);assert.equal(response.status,200);state=(await response.json()).draft;if(n===0)oldest=state.selectedTrackId;if(n===40){assert.equal(state.tracks.length,40);assert.equal(state.tracks.some(track=>track.id===oldest),false);assert.deepEqual(await(await a.request(receipt,body)).json(),{ok:true,draft:state});}}
+ assert.equal(a.database.prepare('SELECT count(*) n FROM member_song_archive WHERE user_id=?').get(a.crew.id).n,40);assert.equal((await(await read(a,a.owner)).json()).draft.tracks.length,0);
+ const before=state;await submit(a,command(state.revision));const failed=await take(a);await a.request(receipt,{commandId:failed.id,leaseId:failed.leaseId,outcome:'failed',errorCode:'PROVIDER_UNAVAILABLE'});state=(await(await read(a)).json()).draft;assert.deepEqual(state.tracks,before.tracks);assert.equal(state.selectedTrackId,before.selectedTrackId);assert.equal(state.lyrics,before.lyrics);
+});
+
+
+test('explicit version1 archive upgrade preserves identity drafts commands audits and receipts and backfills only valid songs',async t=>{
+ const a=await fixture(t);const successful=await generated(a);const historical=a.database.prepare("SELECT * FROM member_song_command WHERE kind='generate' AND status='applied'").get();for(const field of ['request_response','receipt_response']){const value=JSON.parse(historical[field]);for(const key of ['tracks','options','selectedTrackId'])delete value.draft[key];a.database.prepare('UPDATE member_song_command SET '+field+'=? WHERE id=?').run(JSON.stringify(value),historical.id);}await submit(a,command(successful.revision,'lyrics',{options:{revisionInstructions:'Refine'}}));const leased=await take(a);
+ a.database.exec('ALTER TABLE member_song_command DROP COLUMN action;ALTER TABLE member_song_command DROP COLUMN track_id;ALTER TABLE member_song_draft DROP COLUMN options;ALTER TABLE member_song_draft DROP COLUMN selected_track_id;DROP TABLE member_song_archive;DROP TABLE member_tool_schema;CREATE TABLE member_tool_schema(version INTEGER PRIMARY KEY CHECK(version=1));INSERT INTO member_tool_schema VALUES(1)');
+ const tables=['user','session','member_access','member_artist_state','member_mail_outbox','member_song_draft','member_song_command','member_song_audit'],before=Object.fromEntries(tables.map(table=>[table,a.database.prepare('SELECT * FROM '+table+' ORDER BY rowid').all()]));
+ await assert.rejects(()=>a.assertReady(),/Explicit member tool schema migration/);assert.equal(a.database.prepare('SELECT version FROM member_tool_schema').get().version,1);assert.equal(a.database.prepare("SELECT name FROM sqlite_master WHERE name='member_song_archive'").get(),undefined);
+ await a.migrate();await a.assertReady();assert.equal(a.database.prepare('SELECT version FROM member_tool_schema').get().version,2);
+ for(const table of tables){const columns=Object.keys(before[table][0]??{});if(columns.length)assert.deepEqual(a.database.prepare('SELECT '+columns.join(',')+' FROM '+table+' ORDER BY rowid').all(),before[table]);}
+ const replay=await finish(a,{id:historical.id,leaseId:historical.lease_id});assert.equal(replay.status,200);const legacy=(await replay.json()).draft;assert.equal(legacy.lyrics,seed.lyrics);assert.deepEqual(legacy.tracks,[]);assert.equal(legacy.selectedTrackId,null);
+ const state=(await(await read(a)).json()).draft;assert.equal(state.tracks.length,1);assert.equal(state.lyrics,seed.lyrics);assert.equal(state.style,seed.style);assert.equal(state.revision,successful.revision+1);assert.equal(state.pending.id,leased.id);assert.equal((await(await read(a,a.owner)).json()).draft.tracks.length,0);
+ assert.equal((await finish(a,leased,{...seed,lyrics:'Upgraded pending verse'})).status,200);let current=(await(await read(a)).json()).draft;assert.equal(current.tracks.length,1);assert.equal(current.lyrics,'Upgraded pending verse');await a.migrate();await a.assertReady();current=(await(await read(a)).json()).draft;assert.equal(current.tracks.length,1);
+ a.database.exec('DROP INDEX member_song_archive_user_order');await assert.rejects(()=>a.assertReady(),/archive constraints/);
+});
+test('archive success and selection roll back completely if the existing audit cannot commit',async t=>{
+ const a=await fixture(t);let state=await generated(a);const first=state.selectedTrackId;await submit(a,command(state.revision));const c=await take(a);a.database.exec("CREATE TRIGGER song_test_archive_audit_failure BEFORE INSERT ON member_song_audit BEGIN SELECT RAISE(ABORT,'synthetic archive audit failure');END");assert.equal((await finish(a,c,{...seed,title:'Second'})).status,503);state=(await(await read(a)).json()).draft;assert.equal(state.tracks.length,1);assert.equal(state.selectedTrackId,first);assert.equal(state.lyrics,seed.lyrics);a.database.exec('DROP TRIGGER song_test_archive_audit_failure');await finish(a,c,{...seed,title:'Second'});state=(await(await read(a)).json()).draft;
+ a.database.exec("CREATE TRIGGER song_test_archive_select_audit_failure BEFORE INSERT ON member_song_audit BEGIN SELECT RAISE(ABORT,'synthetic archive selection audit failure');END");assert.equal((await submit(a,command(state.revision,'select',{trackId:first}))).status,503);assert.deepEqual((await(await read(a)).json()).draft,state);
+});
+
+
+test('incomplete or whitespace-only applied results cannot create or overwrite private archive tracks',async t=>{
+ const a=await fixture(t);let state=await generated(a);for(const kind of ['generate','lyrics','style']){await submit(a,command(state.revision,kind));const c=await take(a),before=(await(await read(a)).json()).draft,result={...seed,[kind==='style'?'style':'lyrics']:'   '};assert.equal((await finish(a,c,result)).status,400);const retained=(await(await read(a)).json()).draft;assert.deepEqual(retained.tracks,before.tracks);assert.equal(retained.lyrics,before.lyrics);assert.equal(retained.style,before.style);await a.request(receipt,{commandId:c.id,leaseId:c.leaseId,outcome:'failed',errorCode:'INVALID_RESULT'});state=(await(await read(a)).json()).draft;}
+});
+
+
+test('new songs start fresh Undo history and cannot erase or replace distinct autosaved tracks',async t=>{
+ const a=await fixture(t);let first=await generated(a);assert.equal(first.previous,null);let response=await submit(a,command(first.revision,'undo'));assert.equal(response.status,409);assert.equal((await response.json()).code,'NOTHING_TO_UNDO');assert.deepEqual((await(await read(a)).json()).draft,first);
+ await submit(a,command(first.revision,'generate'));let c=await take(a);const secondSong={title:'Second distinct song',lyrics:'Second complete verse',style:'Second complete style'};await finish(a,c,secondSong);let second=(await(await read(a)).json()).draft;assert.equal(second.previous,null);assert.equal(second.tracks.length,2);response=await submit(a,command(second.revision,'undo'));assert.equal(response.status,409);assert.equal((await response.json()).code,'NOTHING_TO_UNDO');assert.deepEqual((await(await read(a)).json()).draft,second);
+ await submit(a,command(second.revision,'select',{trackId:first.selectedTrackId}));first=(await(await read(a)).json()).draft;assert.equal(first.lyrics,seed.lyrics);assert.equal(first.style,seed.style);assert.equal(first.previous,null);
+ await submit(a,command(first.revision,'select',{trackId:second.selectedTrackId}));second=(await(await read(a)).json()).draft;assert.equal(second.lyrics,secondSong.lyrics);assert.equal(second.style,secondSong.style);assert.equal(second.previous,null);
+ await submit(a,command(second.revision,'lyrics'));c=await take(a);await finish(a,c,{...secondSong,lyrics:'Refined second verse'});second=(await(await read(a)).json()).draft;assert.deepEqual(second.previous,secondSong);assert.equal((await submit(a,command(second.revision,'undo'))).status,200);second=(await(await read(a)).json()).draft;assert.equal(second.lyrics,secondSong.lyrics);assert.equal(second.style,secondSong.style);assert.equal(second.tracks.length,2);
+ await submit(a,command(second.revision,'select',{trackId:first.selectedTrackId}));assert.equal((await(await read(a)).json()).draft.lyrics,seed.lyrics);
 });

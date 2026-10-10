@@ -38,7 +38,7 @@ test('controller confirm, back and pause leave the console intro running',()=>{
   const h=intro();let menuActions=0;
   const pad=buttons=>({index:0,id:'DualSense',connected:true,mapping:'standard',buttons:Array.from({length:17},(_,i)=>({pressed:buttons.includes(i),value:buttons.includes(i)?1:0})),axes:[0,0]});
   const env={menuReady:true,state:{screen:'title'},windowActive:true,document:{hidden:false},navigator:{getGamepads:()=>env.pads},pads:[pad([])],controllerLabel:'',gamepads:createGamepadInput(),boot:h.boot,music:undefined,$:id=>({textContent:'',click(){if(id==='console-skip')h.boot.skip();else menuActions++;}})};
-  runInNewContext(source.slice(source.indexOf('function pollMenuGamepads(now)'),source.indexOf("$('demo-fullscreen').addEventListener")),env);
+  runInNewContext(source.slice(source.indexOf('function pollMenuGamepads(now)'),source.indexOf('function menuTick(now)')),env);
   env.pollMenuGamepads(0);env.pads=[pad([button])];env.pollMenuGamepads(20);
   assert.equal(h.boot.active,true);assert.equal(h.finished,0);assert.equal(menuActions,0);
  }

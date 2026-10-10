@@ -3,9 +3,10 @@ import {createConsoleBoot} from './console-boot.mjs';
 import {createGameMusic} from './game-music.mjs';
 import {availableControllerItems,canControlMenu} from './fight-menu-controller.mjs';
 import {createGameScreenHost} from './game-screen-host.mjs';
+import {bindGameScreenControls} from './game-screen-controls.mjs';
 import {createMatchOptions} from './fight-menus.mjs';
 import {loadMatchRules,saveMatchRules,loadClashPreferences,enterCorporateCode,matchRulesFromURL,withMatchRules} from './fight-rules.mjs';
-import {nextMenuIndex,toggleDisplayMode} from './fight-ui.mjs';
+import {nextMenuIndex} from './fight-ui.mjs';
 import {STAGES,stageById} from './fight-stages.mjs';
 import {FIGHTER_STYLES} from './fight-engine.mjs';
 import {createFightAudio} from './fight-audio.mjs';
@@ -19,11 +20,12 @@ const $=id=>document.getElementById(id),params=new URL(location.href).searchPara
 let state=null,catalog=null,tournamentRun=null,menuReady=false;
 let corporateUnlocked=loadClashPreferences(localStorage).corporateUnlocked;
 let matchRules=matchRulesFromURL(location.href,loadMatchRules(localStorage));
-const screenHost=createGameScreenHost({onDisplayChange:full=>{$('demo-fullscreen').textContent=full?'Exit fullscreen':'Fullscreen';},onSuspend:()=>{menuSuspended=true;gamepads.reset();audio.clear();music.suspend();bootAudio.pause();bootAudio.currentTime=0;boot.pause();previews.destroy();}});
+const screenHost=createGameScreenHost({onDisplayChange:()=>screenControls.sync(),onSuspend:()=>{menuSuspended=true;gamepads.reset();audio.clear();music.suspend();bootAudio.pause();bootAudio.currentTime=0;boot.pause();previews.destroy();}});
+const screenControls=bindGameScreenControls(screenHost);
 const matchOptions=createMatchOptions({rules:matchRules,onApply:rules=>{matchRules=rules;saveMatchRules(localStorage,rules);gamepads.reset();},onClose:()=>gamepads.reset(),onCode:code=>{const result=enterCorporateCode(localStorage,code);if(result.accepted){corporateUnlocked=true;if(state){state={...state,roster:demoRoster(catalog.fighters,{corporateUnlocked})};buildGrid();render();}}return result;},onSound:uiSound});
 for(const id of ['options-open','title-options-open'])$(id).addEventListener('click',()=>{if(!menuReady)return;gamepads.reset();uiSound('ui-options');matchOptions.show(matchRules);});
 function titleChoices(){return availableControllerItems(['solo-mode','local-mode','tournament-mode','online-mode','title-options-open','controls-open','demo-sound','demo-fullscreen','demo-motion'].map($));}
-function loading(text,progress=0,failed=false){for(const node of document.querySelectorAll?.('header,main,footer')??[])node.inert=true;$('asset-loading').hidden=false;$('asset-loading-text').textContent=text;$('asset-loading-progress').value=progress;$('asset-loading-retry').hidden=!failed;}
+function loading(text,progress=0,failed=false){for(const node of document.querySelectorAll?.('header:not(.game-screen-bar),main,footer')??[])node.inert=true;$('asset-loading').hidden=false;$('asset-loading-text').textContent=text;$('asset-loading-progress').value=progress;$('asset-loading-retry').hidden=!failed;}
 function menuImage(path){return new Promise((resolve,reject)=>{const image=new Image();image.onload=resolve;image.onerror=()=>reject(Error('A menu image could not load. Retry loading.'));image.src=new URL(path,location.href).href;});}
 const tournamentStorage={getItem:key=>sessionStorage.getItem(key),setItem:(key,value)=>sessionStorage.setItem(key,value)};
 const gamepads=createGamepadInput({menuSeatRecovery:true,seats:controllerSeatsFromURL(location.href)});
@@ -40,6 +42,7 @@ const previews=createMenuPreviews({baseURL:location.href,canvases:[$('idle-one')
 function uiSound(type){void audio.emitUISound(type);}
 function settings(){document.body.classList.toggle('motion-reduced',reducedMotion);$('demo-sound').textContent=muted?'Sound off':'Sound on';$('demo-sound').setAttribute('aria-pressed',String(muted));$('demo-motion').checked=reducedMotion;audio.setMuted(muted);music.setMuted(muted);bootAudio.muted=muted;audio.setReducedMotion(reducedMotion);previews.setReducedMotion(reducedMotion);}
 function render(){
+ document.body.dataset.demoScreen=state.screen;
  if(!state)return;
  if(typeof music==='object')music.setScene({screen:state.screen==='title'?'title':state.mode==='tournament'&&state.screen==='ready'?'tournament':'select',fighter:state.picks[0],stage:state.stage});
  const stage=stageById(state.stage);$('stage-choice').hidden=state.mode==='tournament';$('demo-stage').value=stage.id;$('stage-preview').src='assets/stages/'+stage.id+'.webp';$('stage-description').textContent=stage.description;
@@ -72,7 +75,7 @@ function render(){
  $('enter-arena').hidden=state.screen!=='ready';$('enter-arena').textContent=tournament?'START THE CLIMB →':'ENTER THE ARENA →';if(state.screen==='ready'&&!tournament)$('selection-instruction').textContent+=' · ← / → changes stage';
  $('selection-back').textContent=state.activePlayer===1||tournament&&state.screen==='ready'?'← CHANGE PLAYER ONE':'← TITLE SCREEN';
 }
-function focusSelection(){const active=$('fighter-grid').querySelector('[data-fighter="'+state.picks[state.activePlayer]+'"]');active?.focus({preventScroll:true});}
+function focusSelection(){const active=$('fighter-grid').querySelector('[data-fighter="'+state.picks[state.activePlayer]+'"]');active?.focus({preventScroll:true});active?.scrollIntoView?.({block:'nearest',inline:'nearest'});}
 function choose(id){const next=previewDemoFighter(state,id);if(next===state)return;state=next;render();uiSound('ui-select');}
 function confirm(){if(state.screen!=='select')return;gamepads.reset();uiSound('ui-confirm');state=confirmDemoFighter(state);if(state.mode==='tournament')tournamentRun=createTournamentRun(state.roster,{fighterId:state.picks[0],settings:{muted,reducedMotion,controllerSeats:gamepads.seatIndices(),matchRules}});render();if(state.screen==='ready')$('enter-arena').focus({preventScroll:true});else focusSelection();}
 function begin(mode){gamepads.reset();tournamentRun=null;state=beginDemoSelection(state,mode);render();uiSound('ui-start');focusSelection();}
@@ -99,7 +102,7 @@ async function load(){
   state=createDemoSelection(catalog.fighters,{corporateUnlocked,p1:params.get('p1'),p2:params.get('p2'),stage:params.get('stage'),mode:params.get('mode'),screen:params.get('screen')});
   const paths=[...new Set(['assets/menu/title-arena.webp','assets/console/system-clash-title.webp','assets/console/barcode-circuit-works.webp','assets/console/soft-signal-systems.webp','assets/console/channel-06-entertainment.webp','assets/menu/6-bit-standing.webp','assets/menu/9-bit-standing.webp',...catalog.fighters.flatMap(f=>[f.portrait,f.standing])])];let done=0;await Promise.all(paths.map(async path=>{await menuImage(path);if(failed)return;loading('Loading menu artwork · '+(++done)+' / '+paths.length,10+done/paths.length*90);}));
   menuReady=true;for(const node of document.querySelectorAll?.('header,main,footer')??[])node.inert=false;$('asset-loading').hidden=true;buildGrid();render();$('solo-mode').disabled=false;$('local-mode').disabled=false;$('tournament-mode').disabled=false;$('online-mode').disabled=false;$('demo-load').textContent='SIGNAL READY / '+catalog.fighters.length+' FIGHTERS ONLINE';
-  let seen=false;try{seen=sessionStorage.getItem('system-clash-console-seen')==='1';}catch{}if(!seen&&state.screen==='title'){for(const node of document.querySelectorAll('header,main,footer'))node.inert=true;music.setPaused(true);boot.start();if(!muted)void bootAudio.play().catch(()=>{});}
+  let seen=false;try{seen=sessionStorage.getItem('system-clash-console-seen')==='1';}catch{}if(!seen&&state.screen==='title'){for(const node of document.querySelectorAll('header:not(.game-screen-bar),main,footer'))node.inert=true;music.setPaused(true);boot.start();if(!muted)void bootAudio.play().catch(()=>{});}
  }catch(error){failed=true;loading(error.message,0,true);$('demo-load').textContent=error.message;$('demo-load').classList.add('error');$('retry-demo').hidden=false;}
 }
 for(const stage of STAGES){const option=document.createElement('option');option.value=stage.id;option.textContent=stage.name;$('demo-stage').append(option);}
@@ -162,8 +165,6 @@ function pollMenuGamepads(now){
   else if(event.action==='pause'){$('options-open').hidden?$('title-options-open').click():$('options-open').click();return;}
  }
 }
-$('demo-fullscreen').addEventListener('click',async()=>{await screenHost.displayMode();$('demo-fullscreen').textContent=screenHost.isFullscreen?'Exit fullscreen':'Fullscreen';});document.addEventListener('fullscreenchange',()=>{$('demo-fullscreen').textContent=screenHost.isFullscreen?'Exit fullscreen':'Fullscreen';});
-
 function menuTick(now){if(menuSuspended)return;titleFX.draw(now,{reducedMotion,active:state?.screen==='title'&&windowActive&&!document.hidden});pollMenuGamepads(now);if(windowActive&&!document.hidden)boot.tick(now);previews.tick(now);menuRAF=requestAnimationFrame(menuTick);}
 window.addEventListener('blur',()=>{windowActive=false;gamepads.reset();audio.setPaused(true);music.setPaused(true);bootAudio.pause();bootAudio.currentTime=0;boot.pause();});
 window.addEventListener('focus',()=>{windowActive=true;gamepads.reset();audio.setPaused(document.hidden);music.setPaused(document.hidden||boot.active);boot.pause();});

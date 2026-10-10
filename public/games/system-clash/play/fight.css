@@ -71,3 +71,18 @@ main{max-width:1280px;padding:20px 24px;margin-inline:auto}
 @media(max-width:900px) and (orientation:landscape),(pointer:coarse) and (orientation:landscape){.demo .touch-controls>.touch-movement{width:132px;height:122px}.demo .arcade-joystick{width:116px;height:116px}}
 @media(prefers-reduced-motion:reduce){.joystick-knob{transition:none}}
 body.motion-reduced .joystick-knob{transition:none}
+
+/* Reserve separate viewport space for the arena and controls in either orientation. */
+body.demo.game-screen-page{--fight-touch-space:0px;height:var(--game-screen-height);min-height:0;overflow:hidden}
+.demo.game-screen-page main{height:calc(var(--game-screen-height) - var(--game-bar-height));padding:4px max(4px,env(safe-area-inset-right)) max(4px,env(safe-area-inset-bottom)) max(4px,env(safe-area-inset-left));overflow:hidden}
+.demo.game-screen-page .arena{height:100%;min-height:0;margin:0;display:grid;grid-template-rows:minmax(0,1fr) auto;gap:4px}
+.demo.game-screen-page .screen-bezel{align-self:center;width:min(100%,calc((var(--game-screen-height) - var(--game-bar-height) - var(--fight-touch-space) - env(safe-area-inset-bottom) - 12px)*16/9));margin:auto}
+.demo.game-screen-page .touch-controls{position:relative;inset:auto;max-width:900px;width:100%;height:auto;margin:0 auto;padding:4px 8px;pointer-events:auto}
+.demo.game-screen-page .touch-controls>div{pointer-events:auto}
+.demo.game-screen-page .touch-controls>.touch-extras{align-self:center;margin:0}
+@media(max-width:900px),(pointer:coarse){body.demo.game-screen-page{--fight-touch-space:174px}.demo.game-screen-page .touch-controls{grid-template-columns:minmax(120px,1fr) 0 minmax(150px,1fr);gap:0}.demo.game-screen-page .touch-controls>.touch-extras{grid-column:1/-1;grid-row:2;gap:4px}.demo.game-screen-page .touch-controls>.touch-extras .pad-brand{width:auto}.demo.game-screen-page .touch-controls>.classic-buttons{grid-template-columns:repeat(3,46px);grid-template-rows:repeat(2,49px);gap:4px;justify-self:end}.demo.game-screen-page .classic-buttons button{width:46px;height:46px}.demo.game-screen-page .touch-controls>.touch-movement{width:120px;height:120px}.demo.game-screen-page .arcade-joystick{width:112px;height:112px}}
+@media(max-width:900px) and (orientation:landscape),(pointer:coarse) and (orientation:landscape){body.demo.game-screen-page{--fight-touch-space:132px}.demo.game-screen-page .touch-controls{grid-template-columns:132px minmax(0,1fr) 164px;height:126px;max-width:100%;background:#0d071326;border:0;box-shadow:none}.demo.game-screen-page .touch-controls>.touch-extras{grid-column:2;grid-row:1;flex-direction:row}.demo.game-screen-page .touch-controls>.touch-extras .pad-brand{width:100%}.demo.game-screen-page .touch-controls>.classic-buttons{grid-column:3;grid-row:1}.demo.game-screen-page .touch-controls>.touch-movement{width:120px;height:120px}.demo.game-screen-page .arcade-joystick{width:112px;height:112px}}
+.online-session-score{position:fixed;top:var(--game-bar-height);left:0;right:0;z-index:20;height:28px;display:grid;place-items:center;background:#15101df5;border-bottom:1px solid #665374;color:#f6f0fc;font:700 11px monospace;padding:4px max(8px,env(safe-area-inset-right)) 4px max(8px,env(safe-area-inset-left));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.demo.has-online-session-score{padding-top:calc(var(--game-bar-height) + 28px)}
+.demo.has-online-session-score main{height:calc(var(--game-screen-height) - var(--game-bar-height) - 28px)}
+.demo.has-online-session-score .screen-bezel{width:min(100%,calc((var(--game-screen-height) - var(--game-bar-height) - 28px - var(--fight-touch-space) - env(safe-area-inset-bottom) - 12px)*16/9))}

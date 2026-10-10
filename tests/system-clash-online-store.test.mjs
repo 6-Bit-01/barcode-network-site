@@ -102,3 +102,43 @@ test('trickle candidates remain private, deduplicated and bound to the current h
  await fails(()=>rooms.candidates(host.code,'forged',{generation:2,candidates:[candidate]}),401);
  await fails(()=>rooms.candidates(host.code,guest.token,{generation:2,candidates:Array(17).fill(candidate)}),400);
 });
+
+
+test('session results are host-owned, bounded to an active match and committed once',async()=>{
+ const {rooms}=fixture(),host=await rooms.create('Host'),guest=await rooms.join(host.code,'Guest');
+ await rooms.select(host.code,host.token,{fighter:'6-bit',ready:true});await rooms.select(host.code,guest.token,{fighter:'9-bit',ready:true});
+ await fails(()=>rooms.begin(host.code,guest.token,{after:0}),403);
+ const first=await rooms.begin(host.code,host.token,{after:0});assert.equal(first.matchId,1);assert.deepEqual(first.wins,[0,0]);
+ assert.equal((await rooms.begin(host.code,host.token,{after:0})).matchId,1);
+ await fails(()=>rooms.result(host.code,guest.token,{matchId:1,winner:1}),403);
+ await fails(()=>rooms.result(host.code,host.token,{matchId:2,winner:0}),409);
+ await fails(()=>rooms.result(host.code,host.token,{matchId:1,winner:2}),400);
+ const results=await Promise.all([rooms.result(host.code,host.token,{matchId:1,winner:0}),rooms.result(host.code,host.token,{matchId:1,winner:0})]);
+ for(const result of results)assert.deepEqual(result.wins,[1,0]);
+ await fails(()=>rooms.result(host.code,host.token,{matchId:1,winner:1}),409);
+ const privateView=await rooms.poll(host.code,guest.token);assert.deepEqual(privateView.wins,[1,0]);assert.deepEqual(privateView.result,{matchId:1,winner:0});
+ assert.deepEqual(Object.keys((await rooms.list())[0]??{}),[]);
+});
+test('rematch, selection and reload recovery retain the tally without counting unfinished matches',async()=>{
+ const {rooms}=fixture(),host=await rooms.create('Host'),guest=await rooms.join(host.code,'Guest');
+ for(const seat of [host,guest])await rooms.select(host.code,seat.token,{fighter:seat.role==='host'?'6-bit':'9-bit',ready:true});
+ await rooms.begin(host.code,host.token,{after:0});await rooms.result(host.code,host.token,{matchId:1,winner:1});
+ assert.equal((await rooms.begin(host.code,host.token,{after:1})).matchId,2);
+ await fails(()=>rooms.lobby(host.code,guest.token),409);
+ const restored=await rooms.resume(host.code,guest.token);assert.deepEqual(restored.wins,[0,1]);assert.equal(restored.matchPhase,'selection');assert.equal(restored.host.ready,false);assert.equal(restored.guest.ready,false);
+ await fails(()=>rooms.result(host.code,host.token,{matchId:2,winner:0}),409);
+ for(const seat of [host,guest])await rooms.select(host.code,seat.token,{fighter:seat.role==='host'?'6-bit':'9-bit',ready:true});
+ await rooms.begin(host.code,host.token,{after:2});await rooms.result(host.code,host.token,{matchId:3,winner:null});
+ const selected=await rooms.lobby(host.code,guest.token);assert.deepEqual(selected.wins,[0,1]);assert.equal(selected.matchId,3);assert.equal(selected.matchPhase,'selection');
+ await rooms.leave(host.code,guest.token);const replacement=await rooms.join(host.code,'Replacement');assert.deepEqual((await rooms.poll(host.code,replacement.token)).wins,[0,0]);
+});
+
+
+test('cloud score projection must match the committed room tally and stays host-only',async()=>{
+ const {rooms}=fixture(),host=await rooms.create('Host'),guest=await rooms.join(host.code,'Guest');for(const seat of [host,guest])await rooms.select(host.code,seat.token,{fighter:seat.role==='host'?'6-bit':'9-bit',ready:true});await rooms.begin(host.code,host.token,{after:0});await rooms.result(host.code,host.token,{matchId:1,winner:0});
+ const version='system-clash-20261010-10',packet=(payload,seq=1)=>({lane:'control',data:JSON.stringify({scope:'system-clash-online-v1',version,seq,matchId:1,payload})});
+ await fails(()=>rooms.relay(host.code,guest.token,{version,ack:0,packets:[packet({type:'rematch',matchId:2,wins:[1,0]})]}),400);
+ for(const wins of [[99,0],[1],[1,-1],[1,0.5]])await fails(()=>rooms.relay(host.code,host.token,{version,ack:0,packets:[packet({type:'setup',wins})]}),400);
+ const response=await rooms.relay(host.code,host.token,{version,ack:0,packets:[packet({type:'setup',wins:[1,0]})]});assert.equal(response.accepted.control,1);
+ const selected=await rooms.lobby(host.code,guest.token);await rooms.select(host.code,host.token,{fighter:'6-bit',ready:true});const duplicate=await rooms.lobby(host.code,guest.token);assert.equal(duplicate.selectionVersion,selected.selectionVersion);assert.equal(duplicate.host.ready,true);assert.deepEqual(duplicate.wins,[1,0]);
+});

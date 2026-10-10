@@ -56,8 +56,8 @@ export function createOnlineRelay({role,room,relayRequest,timers=globalThis,now=
  return {get connected(){return peer.connected;},get transport(){return 'relay';},start(){if(started||closed)return;started=true;for(const channel of Object.values(channels))channel.open();void pump();},receiveDescription(){return Promise.resolve(false);},receiveCandidates(){return Promise.resolve(false);},setMatchId:peer.setMatchId,send:peer.send,close(){peer.close();cleanup();}};
 }
 /** Direct play is preferred; an initial network failure switches both ready seats. */
-export function createOnlineConnection({relayRequest,onStatus=()=>{},onDisconnect=()=>{},...options}){
- let active=null,transport='direct',closed=false,everConnected=false,generation=0;
+export function createOnlineConnection({relayRequest,matchId=1,onStatus=()=>{},onDisconnect=()=>{},...options}){
+ let active=null,transport='direct',closed=false,everConnected=false,generation=0,currentMatchId=Number.isSafeInteger(matchId)&&matchId>0?matchId:1;
  const events=revision=>({onStatus(value){if(closed||revision!==generation)return;if(value==='connected')everConnected=true;onStatus(value);},onDisconnect(reason){
   if(closed||revision!==generation)return;
   if(!everConnected&&transport==='direct'&&/^(Could not connect these networks\.|Connection lost\.)/.test(reason)){useRelay();return;}
@@ -66,9 +66,9 @@ export function createOnlineConnection({relayRequest,onStatus=()=>{},onDisconnec
  function useRelay(){
   if(closed||everConnected||transport==='relay')return false;
   const revision=++generation;active?.close();transport='relay';onStatus('relaying');
-  active=createOnlineRelay({...options,relayRequest,...events(revision)});active.start();return true;
+  active=createOnlineRelay({...options,relayRequest,...events(revision)});active.setMatchId(currentMatchId);active.start();return true;
  }
  if(typeof options.RTCPeerConnection!=='function'&&!options.peer)useRelay();
- else active=createOnlinePeer({...options,...events(generation)});
- return {get connected(){return active?.connected??false;},get transport(){return transport;},start(){return active?.start();},receiveDescription(value){return active?.receiveDescription(value)??Promise.resolve(false);},receiveCandidates(value){return active?.receiveCandidates(value)??Promise.resolve(false);},useRelay,setMatchId(value){active?.setMatchId(value);},send(value){return active?.send(value)??false;},close(){if(closed)return;closed=true;++generation;active?.close();}};
+ else {active=createOnlinePeer({...options,...events(generation)});active.setMatchId(currentMatchId);}
+ return {get connected(){return active?.connected??false;},get transport(){return transport;},start(){return active?.start();},receiveDescription(value){return active?.receiveDescription(value)??Promise.resolve(false);},receiveCandidates(value){return active?.receiveCandidates(value)??Promise.resolve(false);},useRelay,setMatchId(value){if(Number.isSafeInteger(value)&&value>=currentMatchId){currentMatchId=value;active?.setMatchId(value);}},send(value){return active?.send(value)??false;},close(){if(closed)return;closed=true;++generation;active?.close();}};
 }

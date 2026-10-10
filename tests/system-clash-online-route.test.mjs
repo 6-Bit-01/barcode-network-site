@@ -121,3 +121,18 @@ test('ice provider failure returns a noncached generic error without configurati
   const {host}=await readyTurnRoom();const response=await POST(request({action:'ice',code:host.code},{Authorization:'Bearer '+host.token}));assert.equal(response.status,503);assert.equal(response.headers.get('cache-control'),'no-store');const text=await response.text();assert.ok(!/fake-route-key|fake-route-provider-token|private-provider-dump/.test(text));await POST(request({action:'leave',code:host.code},{Authorization:'Bearer '+host.token}));
  });
 });
+
+
+test('score and recovery actions keep seat authentication, host authority and idempotent room tally',async()=>{
+ denied=false;unavailable=false;
+ const host=await (await POST(request({action:'create',name:'Score host'}))).json(),guest=await (await POST(request({action:'join',code:host.code,name:'Score guest'}))).json();
+ const post=(seat,fields)=>POST(request({code:host.code,...fields},{Authorization:'Bearer '+seat.token}));
+ for(const seat of [host,guest])assert.equal((await post(seat,{action:'select',fighter:seat.role==='host'?'6-bit':'9-bit',ready:true})).status,200);
+ for(const action of ['begin','result','lobby','resume'])assert.equal((await POST(request({action,code:host.code,after:0,matchId:1,winner:0,token:host.token}))).status,401);
+ assert.equal((await post(guest,{action:'begin',after:0})).status,403);assert.equal((await post(host,{action:'begin',after:0})).status,200);
+ assert.equal((await post(guest,{action:'result',matchId:1,winner:1})).status,403);
+ for(let attempt=0;attempt<2;attempt++){const response=await post(host,{action:'result',matchId:1,winner:0});assert.equal(response.status,200);assert.deepEqual((await response.json()).wins,[1,0]);}
+ assert.equal((await post(host,{action:'result',matchId:1,winner:1})).status,409);
+ const state=await (await post(guest,{action:'poll'})).json();assert.deepEqual(state.wins,[1,0]);assert.ok(!JSON.stringify(state).includes(host.token));assert.ok(!JSON.stringify(state).includes(guest.token));
+ const resumed=await post(guest,{action:'resume'});assert.equal(resumed.status,200);assert.equal(resumed.headers.get('cache-control'),'no-store');assert.deepEqual((await resumed.json()).wins,[1,0]);
+});

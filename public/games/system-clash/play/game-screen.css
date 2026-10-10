@@ -1,0 +1,13 @@
+/* One reachable display control position, including browser expansion fallback. */
+:root{--game-bar-size:56px;--game-bar-height:calc(var(--game-bar-size) + env(safe-area-inset-top,0px));--game-screen-height:100svh}
+@supports(height:100dvh){:root{--game-screen-height:100dvh}}
+body.game-screen-page{padding-top:var(--game-bar-height)}
+.game-screen-page .game-screen-bar{position:fixed;inset:0 0 auto;z-index:2147480002;height:var(--game-bar-height);display:grid;grid-template-columns:minmax(0,1fr) 116px;align-items:center;gap:8px;padding:calc(6px + env(safe-area-inset-top,0px)) max(8px,env(safe-area-inset-right,0px)) 6px max(8px,env(safe-area-inset-left,0px));background:#0c0912f5;border-bottom:1px solid #665374;font:11px monospace;letter-spacing:0}
+.game-screen-bar .game-screen-navigation{display:flex;align-items:center;gap:8px;min-width:0}
+.game-screen-page .game-screen-bar button,.game-screen-page .game-screen-bar a{display:inline-flex;justify-content:center;align-items:center;flex:0 0 auto;min-width:44px;min-height:44px;padding:6px 8px;font:700 11px/1.2 monospace;letter-spacing:0;white-space:nowrap;touch-action:manipulation}
+.game-screen-page .game-screen-bar [data-game-fullscreen]{grid-column:2;grid-row:1;order:0;margin:0;width:116px;background:transparent url('assets/ui/menu-plate.webp') center/100% 100% no-repeat;border:0;color:#f6f0fc}
+.game-screen-bar :focus-visible{outline:3px solid #b7f668;outline-offset:-3px}
+.game-screen-page .asset-loading,.game-screen-page .console-boot{top:var(--game-bar-height)}
+.game-screen-page dialog{max-height:calc(var(--game-screen-height) - var(--game-bar-height) - env(safe-area-inset-bottom,0px) - 16px);overflow:auto}
+@media(max-width:900px){.game-screen-page .game-screen-bar .game-screen-brand,.game-screen-page .game-screen-bar .game-screen-secondary{display:none}.game-screen-bar .game-screen-navigation{gap:4px}.game-screen-page .game-screen-bar button,.game-screen-page .game-screen-bar a{padding-inline:5px}}
+@media(max-width:360px){.game-screen-page .game-screen-bar button,.game-screen-page .game-screen-bar a{font-size:10px}}

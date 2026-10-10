@@ -1,3 +1,5 @@
+import {drawPoseTween} from './fight-pose-tween.mjs';
+import {walkRig} from './fight-walk-rig.mjs';
 import {drawTransmissionBanner} from './transmission-art.mjs';
 import {drawRemainsReveal,raggedSeam} from './fight-remains.mjs';
 import {BROADCAST_CUT,broadcastCutStage,broadcastCutFrontStage,broadcastCutDepth,deletionDefinition,deletionPropState,deletionPose} from './deletion-library.mjs';
@@ -525,6 +527,7 @@ function fighter(ctx, view, art, overlays, weaponArt, hide = false, motion) {
   const dx = feetX + transform.tx;
   const dy = feetY + transform.ty;
   const points=overlays.attachments(asset,frame,view,art.manifest.id),geometry={dx,dy,scale,scaleX,scaleY};
+  const walkingRig=walkRig(asset,view,frame);
   const sourceExclusions=[...(frame.sourceExclusions??[]),...floppyHairExclusions(ctx.canvas,asset,frame,view,art.manifest.id)];
   if(motion) {
     const native=motion.native?.frames?.[view.facing]?.[poseFrameIndex(asset,view)];
@@ -566,7 +569,8 @@ function fighter(ctx, view, art, overlays, weaponArt, hide = false, motion) {
   }
   // One complete source rectangle, shared calibrated geometry, and its own drawn facing.
   if(sourceExclusions.length) {
-    ctx.beginPath();ctx.rect(dx,dy,sw*scaleX,sh*scaleY);
+    const pad=walkingRig?32:0;
+    ctx.beginPath();ctx.rect(dx-pad,dy-pad,sw*scaleX+pad*2,sh*scaleY+pad*2);
     for(const [x,y,w,h]of sourceExclusions)ctx.rect(dx+x*scaleX,dy+y*scaleY,w*scaleX,h*scaleY);
     ctx.clip('evenodd');
   }
@@ -575,7 +579,10 @@ function fighter(ctx, view, art, overlays, weaponArt, hide = false, motion) {
     ctx.ellipse(dx+r.x*scaleX,dy+r.y*scaleY,r.rx*scaleX,r.ry*scaleY,0,0,TAU);ctx.clip('evenodd');
   }
   if(view.clip==='delete-hammer'&&!view.rotationPivotPoint) {ctx.beginPath();ctx.rect(-10000,-10000,20000,FLOOR+10001);ctx.clip();}
-  if(!drawRemainsReveal(ctx,asset.image,view,{sx,sy,sw,sh,dx,dy,scale,scaleX,scaleY,frame}))ctx.drawImage(asset.image, sx, sy, sw, sh, dx, dy, sw * scaleX, sh * scaleY);
+  if(!drawRemainsReveal(ctx,asset.image,view,{sx,sy,sw,sh,dx,dy,scale,scaleX,scaleY,frame})) {
+    const interpolated=(!sourceExclusions.length||walkingRig)&&drawPoseTween(ctx,asset,{...view,reducedMotion:motion?.reducedMotion??view.reducedMotion},{frame,transform,dx,dy,rig:walkingRig});
+    if(!interpolated)ctx.drawImage(asset.image,sx,sy,sw,sh,dx,dy,sw*scaleX,sh*scaleY);
+  }
   overlays.drawDamage(ctx,asset,frame,view,art,geometry,points,weaponArt);
   if(view.fleshCut){const seam=view.fleshCut,x=dx+seam.x*scaleX,top=dy+seam.top*scaleY,bottom=dy+seam.bottom*scaleY,side=view.halfMask,edge=raggedSeam({x,top,bottom,scale:scaleX}),bank=view.remainsArt;
    ctx.strokeStyle='#5b1313';ctx.lineWidth=Math.max(3,12*scale);ctx.beginPath();edge.forEach((p,i)=>ctx[i?'lineTo':'moveTo'](p.x+side*4*scale,p.y));ctx.stroke();
@@ -1866,7 +1873,7 @@ export function createFightRenderer(canvas) {
         const attack=['punch','kick','low-punch','low-kick','uppercut','jump-punch','jump-kick','crouch-punch','crouch-kick','crouch-high-kick','double-punch','power-kick'].includes(action);
         const attackKey=attack&&match.phase==='fight'?action+':'+Math.round((match.combatTime??0)-(f.actionTime??0)):null;
         fighter(ctx,view,art[index],overlays,scene.weaponArt,false,{fx:motionFX,key:index,eligible,
-          native:f?._clips?.[view?.clip]?.combatPoses,attackKey,
+          native:f?._clips?.[view?.clip]?.combatPoses,attackKey,reducedMotion:scene.reducedMotion,
           airborne:Boolean(view?.airborne||(action==='thrown'&&f?._launched&&(view?.y??0)<0))});
       };
       if(deletionActive(match)){views=deletionAftermathViews(match,views,art);views=machineViews(match,scene.deletionProp,views,art,overlays.alphaMask);}

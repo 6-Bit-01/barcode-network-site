@@ -1,3 +1,5 @@
+import {compileWalkGeometry} from './fight-walk-rig.mjs';
+import {compilePoseRenderTimeline} from './fight-pose-tween.mjs';
 import {poseScale,poseTransform,compileWeaponOrigins,resolvePoseAttachments,poseFrameIndex,weaponAttachment} from './fight-attachments.mjs';
 import {clipPlayback} from './fight-pose-registration.mjs';
 import {nativeHurtRegions,nativePushRegions} from './fight-combat-geometry.mjs';
@@ -51,7 +53,9 @@ export function compileFightClip(data, image, manifest, name) {
   if (!Number.isFinite(scale) || scale <= 0) throw new Error(`${name}: invalid sheet scale.`);
   const identity=manifest.fighterId??manifest.baseId??manifest.id;
   const fighterId=typeof identity==='string'?identity.replace(/-(?:arcade(?:-actions)?|deletions?|deletion-utilities)$/,''):identity;
-  return {data, image, scale,character:manifest.character,name,fighterId,timeline:{entries,duration:cursor}};
+  const asset={data, image, scale,character:manifest.character,name,fighterId,timeline:{entries,duration:cursor}};
+  asset.renderTimeline=compilePoseRenderTimeline(asset);
+  return asset;
 }
 
 // Compile once at load: combat uses a few pose-local shapes, never image pixels.
@@ -82,6 +86,7 @@ function compileCombatPoses(asset,name,fighter) {
       hand?{x:torso.x+(strike.x-torso.x)*armStart,y:torso.y+(strike.y-torso.y)*armStart}:
         {x:torso.x,y:torso.y+(legs.y-torso.y)*.45};
     return {bounds:{left:a.x,top:a.y,right:b.x,bottom:b.y},hurt,measuredHurt:!!frame.combatHurt,...nativePushRegions(frame,point),strike,strikeStart,
+      ...(name==='walk'?{walkGeometry:compileWalkGeometry(asset,frame,facing)}:{}),
       sites:{head,torso,legs,grip:point([sites.grip.x,sites.grip.y])},
       cutTargets:(frame.combatProfile?.cleaverTargets??[]).map(([site,x,y])=>({site:['head','torso','legs'][site],...point([x,y])})),
       strikeRadius:Math.max(9,Math.min(hand?16:20,height*(hand?.04:.055))),

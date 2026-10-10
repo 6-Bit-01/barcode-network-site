@@ -74,7 +74,7 @@ export function createOnlineCombatController({seat,matchId,roster,fighterIds,cli
   const timing=clipTimings[index]?.[view.clip],duration=timing?.duration??timing?.frames?.at(-1)?.end;
   if(current.state.phase!=='fight'||['grab','grabbed','thrown'].includes(view.clip)||view.clip.startsWith('delete-')||Number.isInteger(view.frameIndex)||!finite(duration,.001,1000000))return view;
   const age=Math.max(0,(paused?pausedAt:time)-arrivedAt);if(!age)return view;
-  const elapsed=view.elapsed+age*(finite(view.playbackRate,.01,8)?view.playbackRate:1),result={...view,elapsed:timing.loop?elapsed%duration:Math.min(elapsed,duration-.001)};
+  const elapsed=view.elapsed+age*(finite(view.playbackRate,.01,8)?view.playbackRate:1),result={...view,elapsed:timing.loop?elapsed:Math.min(elapsed,duration-.001)};
   result.nativeElapsed=result.elapsed;delete result.poseIndex;delete result.frameIndex;return result;
  }
  const api={seat,get started(){return started;},get paused(){return paused;},get pauseReason(){return pauseReason;},get remoteInput(){return {...remote};},receive(packet){

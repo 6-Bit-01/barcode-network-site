@@ -1,4 +1,5 @@
 import {marbleVictimState} from './fight-remains.mjs';
+import {warpWalkCombatPose} from './fight-walk-rig.mjs';
 import {NEW_FIGHTER_STYLES,newDeletionPositions,splitBodyState,hangingVictimPose,nativeCleaverContacts,nativeCleaverPose} from './new-deletion-library.mjs';
 import {fightStatProfile,fightStatScalars} from './fight-stats.mjs';
 import {deletionDefinition,deletionPose} from './deletion-library.mjs';
@@ -626,7 +627,9 @@ function combatPose(f,view) {
   const elapsed=Math.max(0,view?.elapsed??(nativeActionTime(f)+f._offset)*playbackRate);
   const time=poses.loop?elapsed%poses.duration:Math.min(elapsed,poses.duration-.001);
   const entry=poses.entries.find(entry=>time>=entry.start&&time<entry.end)??poses.entries.at(-1);
-  return {index:entry?.index??0,frame:poses.frames[view?.facing??f.facing]?.[entry?.index??0]};
+  const facing=view?.facing??f.facing,frame=poses.frames[facing]?.[entry?.index??0];
+  return {index:entry?.index??0,frame:clip==='walk'&&!Number.isInteger(view?.frameIndex)
+    ?warpWalkCombatPose(frame,elapsed,poses.duration,facing):frame};
 }
 
 function hurtRegions(f) {

@@ -1,7 +1,8 @@
 import {createGameMusic} from './game-music.mjs';
 import {normalizeMatchRules,loadMatchRules,loadClashPreferences,matchRulesFromURL} from './fight-rules.mjs';
 import {createGameScreenHost} from './game-screen-host.mjs';
-import {ONLINE_SCOPE,ONLINE_STAGES,createFrameCoordinator,createFrameRouter,validPayload} from './online-protocol.mjs';
+import {bindGameScreenControls} from './game-screen-controls.mjs';
+import {ONLINE_SCOPE,ONLINE_STAGES,createFrameCoordinator,createFrameRouter,validPayload,validSessionWins} from './online-protocol.mjs';
 import {createOnlineConnection} from './online-connection.mjs';
 import {DEFAULT_ICE_SERVERS} from './online-transport.mjs';
 import {createGamepadInput} from './fight-gamepad.mjs';
@@ -9,11 +10,11 @@ import {controllerSeatsFromURL,withControllerSeats,resolveInterfaceSettings,demo
 const ENDPOINT='/api/games/system-clash/rooms';
 export function createRoomClient({fetch=globalThis.fetch,endpoint=ENDPOINT}={}){
  let seat=null;
- async function call(options){let response;try{response=await fetch(endpoint,{cache:'no-store',signal:AbortSignal.timeout(10000),...options});}catch{throw new Error('Sessions are unavailable right now. Solo and Two players still work.');}let result;try{result=await response.json();}catch{throw new Error('The session service returned an unreadable response.');}if(!response.ok)throw new Error(typeof result?.error==='string'?result.error.slice(0,240):'The session request failed.');return result;}
+ async function call(options){let response;try{response=await fetch(endpoint,{cache:'no-store',signal:AbortSignal.timeout(10000),...options});}catch{throw new Error('Sessions are unavailable right now. Solo and Two players still work.');}let result;try{result=await response.json();}catch{throw new Error('The session service returned an unreadable response.');}if(!response.ok){const error=new Error(typeof result?.error==='string'?result.error.slice(0,240):'The session request failed.');error.status=response.status;throw error;}return result;}
  return {setSeat(value){seat=value;},releaseSeat(value){return call({method:'POST',keepalive:true,headers:{'Content-Type':'application/json',Authorization:'Bearer '+value.token},body:JSON.stringify({action:'leave',code:value.code})});},list(){return call({method:'GET'});},request(action,fields={}){const authenticated=!!seat&&!['create','join'].includes(action);return call({method:'POST',headers:{'Content-Type':'application/json',...(authenticated?{Authorization:'Bearer '+seat.token}:{})},body:JSON.stringify({action,...(authenticated?{code:seat.code}:{}),...fields})});},leaveOnUnload(){if(!seat)return;try{fetch(endpoint,{method:'POST',keepalive:true,headers:{'Content-Type':'application/json',Authorization:'Bearer '+seat.token},body:JSON.stringify({action:'leave',code:seat.code})}).catch(()=>{});}catch{}}};
 }
 export function onlineFightURL(base,seat,state,settings={}){
- const url=new URL('fight.html',base),params={demo:'1',mode:'local',online:'1',seat:seat.role==='guest'?'1':'0',p1:state.host.fighter,p2:state.guest.fighter,name1:state.host.name??'Host',name2:state.guest.name??'Guest',sound:settings.muted?'0':'1',motion:settings.reducedMotion?'1':'0',musicStyle:normalizeMatchRules({musicStyle:settings.musicStyle}).musicStyle};
+ const url=new URL('fight.html',base),params={demo:'1',mode:'local',online:'1',seat:seat.role==='guest'?'1':'0',p1:state.host.fighter,p2:state.guest.fighter,name1:state.host.name??'Host',name2:state.guest.name??'Guest',sound:settings.muted?'0':'1',motion:settings.reducedMotion?'1':'0',musicStyle:normalizeMatchRules({musicStyle:settings.musicStyle}).musicStyle,winHost:String(state.wins?.[0]??0),winGuest:String(state.wins?.[1]??0)};
  for(const [key,value]of Object.entries(params))url.searchParams.set(key,value);
  url.searchParams.set('stage',ONLINE_STAGES.includes(settings.stage)?settings.stage:'radio-studio');
  return withControllerSeats(url,settings.controllerSeats);
@@ -23,15 +24,42 @@ export function onlineMenuURL(base,settings={}){
  return withControllerSeats(url,settings.controllerSeats);
 }
 /** Lobby authority is explicit; this class never advances the fight engine. */
-export function createOnlineSession({seat,roomState,peer,settings={},postFrame=()=>{},loadFrame=()=>{},onStatus=()=>{},onMatchPhase=()=>{},onEnd=()=>{},timers=globalThis}){
- let matchId=1,frameLoaded=false,started=false,ended=false,setup=false,phase='ready',pendingStart=null,startTimer=null;
+export function createOnlineSession({seat,roomState,peer,settings={},postFrame=()=>{},loadFrame=()=>{},onStatus=()=>{},onMatchPhase=()=>{},onScore=()=>{},onResult,beginMatch,onEnd=()=>{},timers=globalThis}){
+ let matchId=Number.isSafeInteger(roomState?.matchId)&&roomState.matchId>0?roomState.matchId:1,frameLoaded=false,started=false,ended=false,setup=false,phase='ready',pendingStart=null,startTimer=null,resultValue=null,resultTask=null,resultReady=!onResult,restarting=false;
  const host=seat.role==='host';
  const coordinator=createFrameCoordinator({onStart:packet=>{if(!host||ended)return;pendingStart=packet;peer.send(packet);timers.clearTimeout(startTimer);startTimer=timers.setTimeout(()=>end('The other player did not start the match. Leave this session and try again.'),8000);onStatus('Waiting for the other player to start…');}});
- function rememberPhase(packet){if(packet.type==='snapshot'&&['ready','countdown','fight','finish','deletion','over'].includes(packet.snapshot?.state?.phase)){phase=packet.snapshot.state.phase;onMatchPhase(phase);}}
- function load(){timers.clearTimeout(startTimer);pendingStart=null;frameLoaded=false;started=false;phase='ready';onMatchPhase(phase);loadFrame(matchId,settings);onStatus('Loading both fighters…');}
- function restart(){if(!host||ended||!started||phase!=='over')return;matchId=coordinator.reset();peer.setMatchId(matchId);peer.send({type:'rematch',matchId});load();}
+ if(matchId>1)coordinator.reset(matchId);
+ function saveResult(){
+  if(!host||!resultValue||resultTask||ended)return resultTask;
+  resultReady=false;
+  try{resultTask=Promise.resolve(onResult?.(resultValue)).then(()=>{if(!ended)resultReady=true;},()=>{if(!ended&&!resultReady)onStatus('The result could not be saved. Retry the score before playing again.');}).finally(()=>{resultTask=null;});}catch{resultTask=null;if(!ended&&!resultReady)onStatus('The result could not be saved. Retry the score before playing again.');}
+  return resultTask;
+ }
+ function reconcileResult(room){
+  const result=room?.result;
+  if(ended||!started||room?.matchPhase!=='over'||room.matchId!==matchId||result?.matchId!==matchId||!validSessionWins(room.wins)||![0,1,null].includes(result.winner))return false;
+  if((host&&!resultValue)||(resultValue&&resultValue.winner!==result.winner))return false;
+  resultValue={matchId,winner:result.winner};resultReady=true;
+  if(phase!=='over'){phase='over';onMatchPhase(phase,resultValue);}
+  return true;
+ }
+ function rememberPhase(packet){
+  const snapshot=packet.snapshot,state=snapshot?.state;
+  if(packet.type!=='snapshot'||!['ready','countdown','fight','finish','deletion','over'].includes(state?.phase)||(snapshot.matchId!==undefined&&snapshot.matchId!==matchId))return;
+  if(resultValue&&phase==='over')return;
+  if(state.phase==='over'&&state.winner!==undefined&&![0,1,null].includes(state.winner))return;
+  if(phase!==state.phase){phase=state.phase;onMatchPhase(phase,{matchId,winner:state.winner});}
+  if(host&&onResult&&!resultValue&&phase==='over'&&snapshot.matchId===matchId&&Number.isSafeInteger(snapshot.seq)&&snapshot.seq>0&&[0,1,null].includes(state.winner)){resultValue={matchId,winner:state.winner};saveResult();}
+ }
+ function load(){timers.clearTimeout(startTimer);pendingStart=null;frameLoaded=false;started=false;phase='ready';resultValue=null;resultTask=null;resultReady=!onResult;onMatchPhase(phase);loadFrame(matchId,settings);onStatus('Loading both fighters…');}
+ function restart(){
+  if(!host||ended||!started||phase!=='over'||restarting)return;
+  const advance=value=>{if(ended)return;const next=value?.matchId??matchId+1;if(next!==matchId+1)throw new Error('The match changed. Return to fighter selection.');matchId=coordinator.reset(next);peer.setMatchId(matchId);peer.send({type:'rematch',matchId,...(validSessionWins(value?.wins)?{wins:[...value.wins]}:{})});load();};
+  if(!beginMatch&&!onResult){advance();return;}
+  restarting=true;void (async()=>{try{if(resultTask)await resultTask;if(!resultReady||ended)return;advance(await beginMatch?.(matchId));}catch(error){onStatus(error.message??'Could not start the rematch.');}finally{restarting=false;}})();
+ }
  function end(reason){if(ended)return;ended=true;started=false;pendingStart=null;timers.clearTimeout(startTimer);postFrame({type:'leave'});onEnd(reason);}
- return {get matchId(){return matchId;},connected(){if(ended||setup)return;peer.setMatchId(matchId);if(host){setup=true;peer.send({type:'setup',...(settings.stage?{stage:settings.stage}:{})});load();}else onStatus('Connected. Waiting for the host’s arena…');},receiveFrame(packet){
+ return {get matchId(){return matchId;},connected(){if(ended||setup)return;peer.setMatchId(matchId);if(host){setup=true;peer.send({type:'setup',...(settings.stage?{stage:settings.stage}:{}),...(validSessionWins(roomState?.wins)?{wins:[...roomState.wins]}:{})});load();}else onStatus('Connected. Waiting for the host’s arena…');},receiveFrame(packet){
   if(ended||!validPayload(packet))return;
   if(packet.type==='loaded'){if(frameLoaded)return;frameLoaded=true;peer.send(packet);if(host)coordinator.loaded('local');else onStatus('Ready. Waiting for both fighters…');return;}
   if(packet.type==='leave'){peer.send(packet);end('You left the match.');return;}
@@ -44,15 +72,15 @@ export function createOnlineSession({seat,roomState,peer,settings={},postFrame=(
  },receivePeer(packet){
   if(ended||!validPayload(packet))return;
   if(packet.type==='leave'){end('The other player left.');return;}
-  if(packet.type==='setup'&&!host&&!setup){setup=true;settings.stage=packet.stage;load();return;}
+  if(packet.type==='setup'&&!host&&!setup){setup=true;settings.stage=packet.stage;if(validSessionWins(packet.wins))onScore([...packet.wins],matchId);load();return;}
   if(packet.type==='loaded'){if(host)coordinator.loaded('remote');return;}
-  if(packet.type==='rematch'){if(host){if(packet.matchId===undefined)restart();}else if(packet.matchId===matchId+1){matchId=packet.matchId;peer.setMatchId(matchId);load();}return;}
+  if(packet.type==='rematch'){if(host){if(packet.matchId===undefined)restart();}else if(packet.matchId===matchId+1){matchId=packet.matchId;peer.setMatchId(matchId);if(validSessionWins(packet.wins))onScore([...packet.wins],matchId);load();}return;}
   if(packet.type==='start'&&!host&&frameLoaded&&!started&&!pendingStart&&packet.matchId===matchId){pendingStart=packet;postFrame(packet);onStatus('Starting your fighter…');return;}
   if(packet.type==='started'&&host&&pendingStart&&packet.matchId===matchId&&!started){const start=pendingStart;pendingStart=null;timers.clearTimeout(startTimer);started=true;postFrame(start);onStatus('Clash!');return;}
   if(!started)return;
   if(packet.type==='pause'){if(host&&!packet.paused)return;postFrame(packet);if(host)peer.send(packet);onStatus(packet.paused?(packet.reason==='network'?'Connection interrupted. Waiting to reconnect…':'Paused by a player.'):'Clash!');return;}
   if((host&&['action','input'].includes(packet.type))||(!host&&['snapshot','events'].includes(packet.type))){if(!host)rememberPhase(packet);postFrame(packet);}
- },end,destroy(){ended=true;started=false;pendingStart=null;timers.clearTimeout(startTimer);}};
+ },end,reconcileResult,retryResult:saveResult,destroy(){ended=true;started=false;pendingStart=null;timers.clearTimeout(startTimer);}};
 }
 export function nextLobbyFocus(items,current,key,columns=1){
  const delta={ArrowLeft:-1,ArrowRight:1,ArrowUp:-columns,ArrowDown:columns}[key];
@@ -61,15 +89,36 @@ export function nextLobbyFocus(items,current,key,columns=1){
  return items[(current+delta+items.length)%items.length];
 }
 export async function mountOnlineLobby({document=globalThis.document,window=globalThis.window,fetch=globalThis.fetch}={}){
- const screenHost=createGameScreenHost({window,document,onSuspend:()=>unload()});
+ let screenControls;const screenHost=createGameScreenHost({window,document,onSuspend:()=>unload(),onDisplayChange:()=>screenControls?.sync()});screenControls=bindGameScreenControls(screenHost,{document});
  const $=id=>document.getElementById(id),client=createRoomClient({fetch}),launch=new URL(window.location.href);
  const settings={musicStyle:matchRulesFromURL(launch.href,loadMatchRules(window.localStorage)).musicStyle,...resolveInterfaceSettings(launch,{prefersReducedMotion:window.matchMedia('(prefers-reduced-motion: reduce)').matches}),controllerSeats:controllerSeatsFromURL(launch.href),stage:ONLINE_STAGES.includes(launch.searchParams.get('stage'))?launch.searchParams.get('stage'):'radio-studio'};
- const menuLinks=[...document.querySelectorAll('a[href="index.html"]')].filter(link=>link.tagName==='A');for(const link of menuLinks){link.href=onlineMenuURL(launch,settings).href;link.addEventListener('click',event=>{event.preventDefault();screenHost.navigate(onlineMenuURL(launch,settings));});}
+ const menuLinks=[...document.querySelectorAll('a[href="index.html"]')].filter(link=>link.tagName==='A');for(const link of menuLinks){link.href=onlineMenuURL(launch,settings).href;link.addEventListener('click',event=>{event.preventDefault();const previous=seat;resetRoom();if(previous)void client.releaseSeat(previous).catch(()=>{});screenHost.navigate(onlineMenuURL(launch,settings));});}
  const music=createGameMusic({window,document,muted:settings.muted});music.setScene({screen:'online'});music.setPaused(!document.hasFocus());
  const blur=()=>music.setPaused(true),focus=()=>music.setPaused(false);window.addEventListener('blur',blur);window.addEventListener('focus',focus);
  const pads=createGamepadInput({seats:settings.controllerSeats});
- let seat=null,state=null,peer=null,session=null,roster=[],busy=false,pollTimer=null,listTimer=null,expiryTimer=null,epoch=0,pollErrors=0,destroyed=false,connected=false,stopped=false,listing=false,suspended=false,raf=null,pendingJoinCode=null,pendingEntry=null,connecting=false;
+ let seat=null,state=null,peer=null,session=null,roster=[],busy=false,pollTimer=null,listTimer=null,expiryTimer=null,epoch=0,pollErrors=0,destroyed=false,connected=false,stopped=false,listing=false,suspended=false,raf=null,pendingJoinCode=null,pendingEntry=null,connecting=false,currentScreen='browser',fighterPage=0,displayResult=null,scoreFailed=false;
  const status=(text,kind='info')=>{$('online-status').textContent=text==='Clash!'&&peer?.transport==='relay'?'Clash! · Cloud connection':text;$('online-status').setAttribute('data-kind',kind);};
+ function showScreen(screen,{focus=false}={}){
+  currentScreen=screen;$('online-lobby').dataset.onlineScreen=screen;
+  for(const name of ['browser','session','selection','fight','results'])$(name+'-screen').hidden=name!==screen;
+  $('entry-panel').hidden=screen!=='browser';$('room-panel').hidden=screen!=='session';$('fight-frame').hidden=screen!=='fight';$('match-actions').hidden=screen!=='fight';$('session-score').hidden=!seat;
+  if(focus){const target={browser:'screen-name',session:'session-select',selection:'ready-button',results:'rematch-button',fight:'fight-frame'}[screen];($(target)?.disabled&&screen==='results'?$('results-leave'):$(target))?.focus?.({preventScroll:true});}
+ }
+ function renderFighterPage(){
+  const pages=Math.max(1,Math.ceil(roster.length/8));fighterPage=Math.max(0,Math.min(pages-1,fighterPage));
+  for(const [index,button]of [...$('fighter-grid').querySelectorAll('button')].entries())button.hidden=Math.floor(index/8)!==fighterPage;
+  $('fighter-page').textContent=(fighterPage+1)+' / '+pages;$('fighter-prev').disabled=fighterPage===0;$('fighter-next').disabled=fighterPage===pages-1;$('fighter-pagination').hidden=pages<=1;
+ }
+ function renderScores(){if(!state)return;$('score-host-name').textContent=state.host?.name??'Host';$('score-guest-name').textContent=state.guest?.name??'Waiting';$('score-host').textContent=String(state.wins?.[0]??0);$('score-guest').textContent=String(state.wins?.[1]??0);}
+ function renderResults(){
+  const result=displayResult??state?.result;if(!result)return;const winner=result.winner;
+  $('result-heading').textContent=winner===null?'Draw':(state?.[winner===0?'host':'guest']?.name??'Player')+' wins';
+  const saved=state?.matchPhase==='over'&&state.matchId===result.matchId&&state.result?.matchId===result.matchId&&state.result.winner===winner;$('result-note').textContent=saved?'Score saved. Keep the clash going.':scoreFailed?'The score is not saved yet. Retry before playing again.':'Saving the session score…';
+  $('rematch-button').disabled=!saved||!peer||busy;$('results-select').disabled=!saved||busy;$('results-retry').hidden=saved||!scoreFailed||seat?.role!=='host';
+ }
+ function closeMatch(){postFrame({type:'leave'});session?.destroy();session=null;peer?.close();peer=null;connected=false;connecting=false;$('fight-frame').src='about:blank';$('fight-frame').hidden=true;displayResult=null;scoreFailed=false;}
+ function armExpiry(){window.clearTimeout(expiryTimer);if(seat)expiryTimer=window.setTimeout(()=>stop('This 20-minute session expired. Leave it and create another.'),Math.max(0,seat.expiresAt-Date.now()));}
+ showScreen('browser');
  $('stage-choice').value=settings.stage;$('sound-setting').checked=!settings.muted;$('motion-setting').checked=settings.reducedMotion;
  const buttons=()=>[...document.querySelectorAll('button,input,a[href],select')].filter(el=>!el.disabled&&!el.closest('[hidden]'));
  function renderEntry(){
@@ -84,27 +133,36 @@ export async function mountOnlineLobby({document=globalThis.document,window=glob
  }
  function chooseJoin(code){pendingJoinCode=code;$('join-code').value=code;renderEntry();}
  function clearTimers(){window.clearTimeout(pollTimer);window.clearTimeout(listTimer);window.clearTimeout(expiryTimer);}
- function stop(reason){if(stopped)return;stopped=true;busy=false;connecting=false;++epoch;clearTimers();if(seat)client.request('leave').catch(()=>{});peer?.close();peer=null;connected=false;session?.end(reason);$('fight-frame').hidden=true;$('fight-frame').src='about:blank';$('match-actions').hidden=true;$('ready-button').disabled=true;$('ready-button').textContent='Connection ended';$('ready-button').setAttribute('aria-label','Connection ended');$('ready-button').setAttribute('aria-pressed','false');$('players').textContent='Connection ended. Leave this session to try again.';$('fighter-grid').setAttribute('aria-disabled','true');if(!destroyed&&!suspended){music.resume();music.setScene({screen:'online'});}status(reason);}
+ function stop(reason){
+  if(stopped||destroyed||suspended)return;stopped=true;busy=false;++epoch;clearTimers();closeMatch();showScreen('session');renderSeat();$('session-note').textContent='Connection ended. Your saved wins are retained. Choose fighters to reconnect.';
+  if(!destroyed&&!suspended){music.resume();music.setScene({screen:'online'});}status(reason,'error');if(seat&&seat.expiresAt>Date.now()){armExpiry();pollTimer=window.setTimeout(()=>poll(epoch),1500);}
+ }
  function resetRoom(){
-  ++epoch;clearTimers();postFrame({type:'leave'});peer?.send({type:'leave'});peer?.close();peer=null;session?.destroy();session=null;client.setSeat(null);seat=null;state=null;connected=false;stopped=false;busy=false;connecting=false;pollErrors=0;pendingJoinCode=null;pendingEntry=null;pads.reset();
+  ++epoch;clearTimers();peer?.send({type:'leave'});closeMatch();client.setSeat(null);seat=null;state=null;stopped=false;busy=false;pollErrors=0;pendingJoinCode=null;pendingEntry=null;pads.reset();fighterPage=0;
   try{window.sessionStorage.removeItem('system-clash-online-seat');}catch{}
-  $('room-panel').hidden=true;$('entry-panel').hidden=false;$('fight-frame').hidden=true;$('fight-frame').src='about:blank';$('match-actions').hidden=true;$('fighter-grid').removeAttribute('aria-disabled');$('stage-choice').disabled=false;$('ready-button').disabled=!roster.length;$('create-room').disabled=!roster.length;$('join-room').disabled=!roster.length;
+  $('fighter-grid').removeAttribute('aria-disabled');$('stage-choice').disabled=false;$('ready-button').disabled=!roster.length;
   for(const button of $('fighter-grid').querySelectorAll('button'))button.disabled=roster.find(f=>f.id===button.dataset.fighter)?.enabled!==true;
-  $('join-code').value='';renderEntry();if(!destroyed&&!suspended){music.resume();music.setScene({screen:'online'});}status('Choose a screen name, then create or join a session.');
+  $('join-code').value='';showScreen('browser');renderFighterPage();renderEntry();if(!destroyed&&!suspended){music.resume();music.setScene({screen:'online'});}status('Choose a screen name, then create or join a session.');
  }
  async function leave(){if(busy||destroyed||suspended)return;const previous=seat;resetRoom();const revision=epoch;refreshRooms();try{if(previous)await client.releaseSeat(previous);}catch(error){if(revision===epoch&&!destroyed&&!suspended&&!seat)status(error.message);}}
- function renderSeat(){if(!seat)return;if(!state){
-  $('room-code').textContent=seat.code;$('seat-label').textContent=seat.role==='host'?'You host this session':'You joined this session';$('players').textContent='Loading players…';$('selected-fighter').textContent='Loading fighter…';
-  $('ready-button').disabled=true;$('ready-button').textContent='Loading session…';$('ready-button').setAttribute('aria-label','Loading session.');$('ready-button').setAttribute('aria-pressed','false');$('stage-choice').disabled=true;
-  for(const button of $('fighter-grid').querySelectorAll('button'))button.disabled=true;
-  status('Loading your session…');return;
- }const own=state[seat.role],other=state[seat.role==='host'?'guest':'host'];$('room-code').textContent=seat.code;$('seat-label').textContent=(seat.role==='host'?'You host this session':'You joined this session')+(peer?.transport==='relay'?' · Cloud connection':'');$('players').textContent=state.host.name+' · '+(state.host.ready?'Ready':'Choosing')+' / '+(state.guest?state.guest.name+' · '+(state.guest.ready?'Ready':'Choosing'):'Waiting for another player');$('selected-fighter').textContent=roster.find(f=>f.id===own.fighter)?.name??own.fighter;$('ready-button').textContent=own.ready?'Ready ✓':'Ready to clash';$('ready-button').setAttribute('aria-pressed',String(own.ready));$('ready-button').setAttribute('aria-label',own.ready?peer||busy||connecting?'You are ready.':'You are ready. Press to cancel readiness.':'Ready to clash');$('ready-button').disabled=busy||connecting||!!peer;$('stage-choice').disabled=seat.role!=='host'||connecting||!!peer;for(const button of $('fighter-grid').querySelectorAll('button')){button.setAttribute('aria-pressed',String(button.dataset.fighter===own.fighter));button.disabled=busy||connecting||!!peer||roster.find(f=>f.id===button.dataset.fighter)?.enabled!==true;}if(!peer)status(other?(own.ready&&other.ready?'Both ready. Connecting…':'Choose your fighter, then press Ready.'):'Room '+seat.code+' is open. Share its code or wait for a player.');}
- function postFrame(payload){const frame=$('fight-frame');if(!frame.contentWindow||!session)return;frame.contentWindow.postMessage({scope:ONLINE_SCOPE,matchId:session.matchId,payload},launch.origin);if(payload.type==='start'){frame.focus();frame.contentWindow.focus?.();frame.scrollIntoView?.({block:'start',behavior:settings.reducedMotion?'auto':'smooth'});}}
- function loadFrame(matchId,chosenSettings){music.suspend();$('stage-choice').value=chosenSettings.stage??'radio-studio';const url=onlineFightURL(launch.href,seat,state,chosenSettings);url.searchParams.set('matchId',String(matchId));$('fight-frame').src=url.href;$('fight-frame').hidden=false;$('match-actions').hidden=false;$('rematch-button').disabled=true;}
+ function renderSeat(){
+  if(!seat)return;$('room-code').textContent=seat.code;$('seat-label').textContent=(seat.role==='host'?'You host this session':'You joined this session')+(peer?.transport==='relay'?' · Cloud connection':'');
+  if(!state){$('players').textContent='Loading players…';$('selected-fighter').textContent='Loading fighter…';$('ready-button').disabled=true;$('ready-button').textContent='Loading session…';$('ready-button').setAttribute('aria-label','Loading session.');$('ready-button').setAttribute('aria-pressed','false');$('stage-choice').disabled=true;for(const button of $('fighter-grid').querySelectorAll('button'))button.disabled=true;status('Loading your session…');return;}
+  const own=state[seat.role],other=state[seat.role==='host'?'guest':'host'];if(!own)return;renderScores();renderResults();
+  $('players').textContent=state.host.name+' · '+(state.host.ready?'Ready':'Choosing')+' / '+(state.guest?state.guest.name+' · '+(state.guest.ready?'Ready':'Choosing'):'Waiting for another player');
+  $('selected-fighter').textContent=roster.find(f=>f.id===own.fighter)?.name??own.fighter;$('ready-button').textContent=stopped?'Connection ended':own.ready?'Ready ✓':'Ready to clash';$('ready-button').setAttribute('aria-pressed',String(own.ready));$('ready-button').setAttribute('aria-label',stopped?'Connection ended':own.ready?peer||busy||connecting?'You are ready.':'You are ready. Press to cancel readiness.':'Ready to clash');$('ready-button').disabled=busy||connecting||!!peer||stopped;$('stage-choice').disabled=seat.role!=='host'||connecting||!!peer;
+  $('session-select').disabled=busy||connecting;$('session-select').textContent=stopped?'Choose fighters to reconnect →':'Choose fighter →';
+  for(const button of $('fighter-grid').querySelectorAll('button')){button.setAttribute('aria-pressed',String(button.dataset.fighter===own.fighter));button.disabled=busy||connecting||!!peer||stopped||roster.find(f=>f.id===button.dataset.fighter)?.enabled!==true;}renderFighterPage();
+  if(!peer&&!stopped&&!busy)status(other?(own.ready&&other.ready?'Both ready. Connecting…':'Choose your fighter, then press Ready.'):'Session '+seat.code+' is open. Share its code or wait for a player.');
+ }
+ function postFrame(payload){const frame=$('fight-frame');if(!frame.contentWindow||!session)return;frame.contentWindow.postMessage({scope:ONLINE_SCOPE,matchId:session.matchId,payload},launch.origin);if(payload.type==='start'){frame.focus();frame.contentWindow.focus?.();}}
+ function loadFrame(matchId,chosenSettings){music.suspend();$('stage-choice').value=chosenSettings.stage??'radio-studio';const url=onlineFightURL(launch.href,seat,state,chosenSettings);url.searchParams.set('matchId',String(matchId));$('fight-frame').src=url.href;showScreen('fight');$('rematch-button').disabled=true;}
  async function connect(){
   if(destroyed||suspended||stopped||connecting||peer||!seat||!state?.guest||!state.host.ready||!state.guest.ready)return;
-  const revision=epoch,previous=seat;connecting=true;renderSeat();
+  const revision=epoch,previous=seat;if(seat.role==='guest'&&state.matchPhase!=='match')return;connecting=true;renderSeat();
   try{
+   if(seat.role==='host'&&state.matchPhase!=='match'){const begun=await client.request('begin',{after:state.matchId??0});if(!currentSeatRequest(revision,previous))return;state=begun;}
+   if(!Number.isSafeInteger(state?.matchId)||state.matchId<1)throw new Error('The session returned an invalid match. Return to fighter selection.');
    let configuration;try{configuration=await client.request('ice');}catch{}
    if(!currentSeatRequest(revision,previous)||stopped||!state?.guest||!state.host.ready||!state.guest.ready)return;
    const relayServers=Array.isArray(configuration?.iceServers)&&configuration.iceServers.length<=8?configuration.iceServers.filter(server=>{
@@ -112,10 +170,37 @@ export async function mountOnlineLobby({document=globalThis.document,window=glob
     return urls.length>0&&urls.length<=8&&urls.every(url=>typeof url==='string'&&/^turns?:turn\.cloudflare\.com:(3478|443|80|5349)\?transport=(udp|tcp)$/.test(url))&&typeof server.username==='string'&&server.username.length>0&&server.username.length<=2048&&typeof server.credential==='string'&&server.credential.length>0&&server.credential.length<=2048;
    }):[];
    const iceServers=[...DEFAULT_ICE_SERVERS,...relayServers];
-   peer=createOnlineConnection({role:seat.role,room:seat.code,iceServers,RTCPeerConnection:window.RTCPeerConnection,onPacket:packet=>{if(revision===epoch)session?.receivePeer(packet);},sendSignal:description=>client.request('signal',{description}),sendCandidates:value=>client.request('candidates',value),relayRequest:value=>client.request('relay',value),onStatus:value=>{if(revision!==epoch)return;if(value==='connected'){connected=true;session?.connected();status(peer?.transport==='relay'?'Cloud connection. Loading the match…':'Connected. Loading the match…');}else if(value==='connecting')status('Connecting players…');else if(value==='relaying')status('Connecting through cloud…');else if(value==='retrying')status('Retrying the direct connection…');},onDisconnect:reason=>{if(revision===epoch)stop(reason);}});session=createOnlineSession({seat,roomState:state,peer,settings,postFrame,loadFrame,onStatus:status,onMatchPhase:phase=>{$('rematch-button').disabled=phase!=='over';},onEnd:reason=>{if(revision===epoch)stop(reason);},timers:window});renderSeat();if(seat.role==='host')peer.start();
+   peer=createOnlineConnection({role:seat.role,room:seat.code,matchId:state.matchId,iceServers,RTCPeerConnection:window.RTCPeerConnection,onPacket:packet=>{if(revision===epoch)session?.receivePeer(packet);},sendSignal:description=>client.request('signal',{description}),sendCandidates:value=>client.request('candidates',value),relayRequest:value=>client.request('relay',value),onStatus:value=>{if(revision!==epoch)return;if(value==='connected'){connected=true;session?.connected();status(peer?.transport==='relay'?'Cloud connection. Loading the match…':'Connected. Loading the match…');}else if(value==='connecting')status('Connecting players…');else if(value==='relaying')status('Connecting through cloud…');else if(value==='retrying')status('Retrying the direct connection…');},onDisconnect:reason=>{if(revision===epoch)stop(reason);}});peer.setMatchId(state.matchId);session=createOnlineSession({seat,roomState:state,peer,settings,postFrame,loadFrame,onStatus:status,onScore:(wins,matchId)=>{if(revision===epoch&&state){state={...state,wins,matchId,matchPhase:'match',result:null};renderScores();}},onMatchPhase:(phase,result)=>{if(revision!==epoch)return;if(phase==='over'){displayResult=result;showScreen('results',{focus:true});renderResults();}else if(phase==='ready')scoreFailed=false;},onResult:async result=>{try{const saved=await client.request('result',result);if(!currentSeatRequest(revision,previous))return;state=saved;scoreFailed=false;renderScores();renderResults();}catch(error){if(revision===epoch){scoreFailed=!session?.reconcileResult(state);renderResults();}throw error;}},beginMatch:async after=>{const begun=await client.request('begin',{after});if(!currentSeatRequest(revision,previous))throw new Error('This session changed.');state=begun;renderScores();return begun;},onEnd:reason=>{if(revision===epoch)stop(reason);},timers:window});renderSeat();if(seat.role==='host')peer.start();
   }finally{if(revision===epoch){connecting=false;if(!stopped)renderSeat();}}
  }
- async function poll(revision){if(destroyed||revision!==epoch||!seat)return;try{const result=await client.request('poll');if(revision!==epoch)return;state=result;pollErrors=0;if(seat.role==='host'&&connected&&!result.guest){stop('The other player left. Leave this room to create a new session.');return;}renderSeat();await connect();if(revision!==epoch||!seat)return;if(result.relay&&peer&&!connected)peer.useRelay();if(result.candidates?.length&&peer)await peer.receiveCandidates({generation:result.generation,candidates:result.candidates});if(result.description&&peer)await peer.receiveDescription(result.description);}catch(error){if(revision!==epoch)return;pollErrors++;status(error.message);if(pollErrors>=3){stop('Session service lost contact. Leave this room and try again.');return;}}if(revision===epoch&&seat)pollTimer=window.setTimeout(()=>poll(revision),connected?15000:1500);}
+ async function poll(revision){
+  if(destroyed||suspended||revision!==epoch||!seat)return;
+  try{const result=await client.request('poll');if(revision!==epoch||suspended)return;
+   const returned=(state?.selectionVersion??0)!==(result.selectionVersion??0);
+   if((result.matchId??0)<(state?.matchId??0)||(result.selectionVersion??0)<(state?.selectionVersion??0)||!returned&&state?.matchPhase==='over'&&result.matchPhase==='match'){pollTimer=window.setTimeout(()=>poll(revision),1500);return;}
+   state=result;pollErrors=0;
+   if(returned&&(peer||session||stopped)){++epoch;clearTimers();closeMatch();stopped=false;busy=false;showScreen('selection',{focus:true});music.resume();music.setScene({screen:'online'});renderSeat();armExpiry();void poll(epoch);return;}
+   if(connected&&!result.guest){stop('The other player left. Your saved wins are retained.');return;}
+   if(result.matchPhase==='over'&&result.result&&['fight','results'].includes(currentScreen)){const confirmed=session?.reconcileResult(result);if(confirmed){displayResult=result.result;scoreFailed=false;}showScreen('results');}
+   renderSeat();if(!stopped)await connect();if(revision!==epoch||!seat)return;
+   if(result.relay&&peer&&!connected)peer.useRelay();if(result.candidates?.length&&peer)await peer.receiveCandidates({generation:result.generation,candidates:result.candidates});if(result.description&&peer)await peer.receiveDescription(result.description);
+  }catch(error){if(revision!==epoch)return;if([401,403,404,410].includes(error.status)){resetRoom();status(error.message,'error');refreshRooms();return;}pollErrors++;status(error.message,'error');if(pollErrors>=3&&!stopped){stop('Session service lost contact. Your saved wins are retained.');return;}}
+  if(revision===epoch&&seat&&!suspended)pollTimer=window.setTimeout(()=>poll(revision),connected&&currentScreen==='fight'?15000:1500);
+ }
+ async function returnSelection(action='lobby'){
+  if(busy||destroyed||suspended||!seat)return;const previous=seat,revision=epoch;busy=true;renderSeat();
+  try{const selected=await client.request(action);if(!currentSeatRequest(revision,previous))return;
+   ++epoch;clearTimers();state=selected;closeMatch();stopped=false;busy=false;showScreen('selection',{focus:true});music.resume();music.setScene({screen:'online'});$('session-note').textContent='Share the code with a rival. Your wins stay with this session.';renderSeat();armExpiry();void poll(epoch);
+  }catch(error){if(currentSeatRequest(revision,previous)){busy=false;renderSeat();status(error.message,'error');}}
+ }
+ async function restoreSeat(){
+  if(destroyed||suspended)return;let restored=seat;
+  if(!restored){try{restored=JSON.parse(window.sessionStorage.getItem('system-clash-online-seat')??'null');}catch{}if(!restored||!/^[A-Z0-9]{6}$/.test(restored.code)||!['host','guest'].includes(restored.role)||typeof restored.token!=='string'||restored.token.length<24||restored.token.length>96||!Number.isFinite(restored.expiresAt)||restored.expiresAt<=Date.now()){try{window.sessionStorage.removeItem('system-clash-online-seat');}catch{}return false;}}
+  seat=restored;client.setSeat(seat);showScreen('session');const revision=++epoch,previous=seat;busy=true;renderSeat();
+  try{const resumed=await client.request('resume');if(!currentSeatRequest(revision,previous))return true;state=resumed;stopped=false;busy=false;renderSeat();armExpiry();void poll(revision);status('Session restored. Choose fighters to clash again.');}
+  catch(error){if(currentSeatRequest(revision,previous)){busy=false;if([401,403,404,410].includes(error.status)){resetRoom();status(error.message,'error');return false;}stopped=true;renderSeat();status(error.message,'error');armExpiry();pollTimer=window.setTimeout(()=>poll(revision),1500);}}
+  return true;
+ }
  async function enter(action,code){
   if(busy||seat||destroyed||suspended)return;
   if(action==='join'){
@@ -134,7 +219,7 @@ export async function mountOnlineLobby({document=globalThis.document,window=glob
    }
    if(destroyed||suspended||revision!==epoch){void client.releaseSeat(result).catch(()=>{});return;}
    seat=result;client.setSeat(seat);try{window.sessionStorage.setItem('system-clash-online-seat',JSON.stringify(seat));}catch{}
-   window.clearTimeout(listTimer);$('entry-panel').hidden=true;$('room-panel').hidden=false;renderSeat();expiryTimer=window.setTimeout(()=>stop('This 20-minute session expired. Leave it and create another.'),Math.max(0,result.expiresAt-Date.now()));busy=false;await poll(revision);
+   window.clearTimeout(listTimer);showScreen('session');renderSeat();armExpiry();busy=false;await poll(revision);
   }catch(error){if(!destroyed&&!suspended&&revision===epoch)status(error.message,'error');}
   finally{if(!destroyed&&!suspended&&revision===epoch){busy=false;pendingEntry=null;renderEntry();if(!seat)refreshRooms();}}
  }
@@ -157,28 +242,42 @@ export async function mountOnlineLobby({document=globalThis.document,window=glob
  function currentSeatRequest(revision,previous){return !destroyed&&!suspended&&revision===epoch&&seat===previous;}
  async function choose(id){
   if(stopped||busy||connecting||peer||!seat||!state||destroyed||suspended||!roster.some(f=>f.id===id&&f.enabled===true))return;
-  const previous=seat,revision=epoch;busy=true;
+  const previous=seat,revision=epoch;busy=true;renderSeat();
   try{await client.request('select',{fighter:id,ready:false});if(currentSeatRequest(revision,previous)&&state)state[previous.role]={...state[previous.role],fighter:id,ready:false};}
   catch(error){if(currentSeatRequest(revision,previous))status(error.message);}
   finally{if(currentSeatRequest(revision,previous)){busy=false;renderSeat();}}
  }
- $('create-room').addEventListener('click',()=>enter('create'));$('join-form').addEventListener('submit',event=>{event.preventDefault();enter('join',$('join-code').value);});$('entry-form').addEventListener('submit',event=>{event.preventDefault();if(pendingJoinCode)enter('join',pendingJoinCode);else{status('Choose an open session or enter its code to join. Use Create new session to host.');$('create-room').focus();}});$('refresh-rooms').addEventListener('click',refreshRooms);$('leave-room').addEventListener('click',leave);
+ $('create-room').addEventListener('click',()=>enter('create'));$('join-form').addEventListener('submit',event=>{event.preventDefault();enter('join',$('join-code').value);});$('entry-form').addEventListener('submit',event=>{event.preventDefault();if(pendingJoinCode)enter('join',pendingJoinCode);else{status('Choose an open session or enter its code to join. Use Create new session to host.');$('create-room').focus();}});$('refresh-rooms').addEventListener('click',refreshRooms);for(const id of ['leave-room','selection-leave','results-leave','fight-leave'])$(id).addEventListener('click',leave);
+ $('session-select').addEventListener('click',()=>{if(stopped){void returnSelection('resume');return;}if(busy||connecting||peer)return;const selected=roster.findIndex(fighter=>fighter.id===state?.[seat?.role]?.fighter);fighterPage=Math.max(0,Math.floor(selected/8));renderFighterPage();showScreen('selection',{focus:true});});$('selection-back').addEventListener('click',()=>{if(!peer)showScreen('session',{focus:true});});$('results-select').addEventListener('click',()=>returnSelection());$('results-retry').addEventListener('click',()=>session?.retryResult());
+ $('fighter-prev').addEventListener('click',()=>{fighterPage--;renderFighterPage();});$('fighter-next').addEventListener('click',()=>{fighterPage++;renderFighterPage();});
  $('ready-button').addEventListener('click',async()=>{
   if(busy||connecting||peer||!state||!seat||destroyed||suspended)return;
-  const previous=seat,revision=epoch,own=state[previous.role],nextReady=!own.ready;busy=true;
+  const previous=seat,revision=epoch,own=state[previous.role],nextReady=!own.ready;busy=true;renderSeat();
   try{await client.request('select',{fighter:own.fighter,ready:nextReady});if(currentSeatRequest(revision,previous)&&state)state[previous.role]={...state[previous.role],fighter:own.fighter,ready:nextReady};}
   catch(error){if(currentSeatRequest(revision,previous))status(error.message);}
   finally{if(currentSeatRequest(revision,previous)){busy=false;renderSeat();void connect().catch(()=>{if(revision===epoch)stop('Could not prepare the connection. Leave this session and try again.');});}}
  });
  $('join-code').addEventListener('input',()=>{const code=$('join-code').value.trim().toUpperCase();pendingJoinCode=/^[A-Z0-9]{6}$/.test(code)?code:null;renderEntry();});
  $('rematch-button').addEventListener('click',()=>session?.receiveFrame({type:'rematch'}));$('sound-setting').addEventListener('change',()=>{settings.muted=!$('sound-setting').checked;music.setMuted(settings.muted);if(!settings.muted)void music.unlock();});$('motion-setting').addEventListener('change',()=>{settings.reducedMotion=$('motion-setting').checked;});$('stage-choice').addEventListener('change',()=>{settings.stage=$('stage-choice').value||undefined;});
- function moveFocus(key){const active=document.activeElement,cards=[...$('fighter-grid').querySelectorAll('button')].filter(button=>!button.disabled);if(cards.includes(active)){const columns=window.getComputedStyle($('fighter-grid')).gridTemplateColumns.split(' ').filter(Boolean).length;nextLobbyFocus(cards,cards.indexOf(active),key,columns)?.focus();return;}const available=buttons();nextLobbyFocus(available,available.indexOf(active),key)?.focus();}
+ function moveFocus(key){
+  const active=document.activeElement,cards=[...$('fighter-grid').querySelectorAll('button')].filter(button=>!button.disabled&&!button.hidden),index=cards.indexOf(active);
+  if(index>=0){
+   const columns=window.getComputedStyle($('fighter-grid')).gridTemplateColumns.split(' ').filter(Boolean).length||4;
+   if(key==='ArrowUp'&&index<columns){$('ready-button').focus();return;}
+   if(key==='ArrowDown'&&index+columns>=cards.length){($('fighter-next').disabled?$('selection-back'):$('fighter-next')).focus();return;}
+   if((key==='ArrowRight'&&index===cards.length-1&&!$('fighter-next').disabled)||(key==='ArrowLeft'&&index===0&&!$('fighter-prev').disabled)){
+    fighterPage+=key==='ArrowRight'?1:-1;renderFighterPage();const next=[...$('fighter-grid').querySelectorAll('button')].filter(button=>!button.disabled&&!button.hidden);(key==='ArrowRight'?next[0]:next.at(-1))?.focus();return;
+   }
+   nextLobbyFocus(cards,index,key,columns)?.focus();return;
+  }
+  const available=buttons();nextLobbyFocus(available,available.indexOf(active),key)?.focus();
+ }
  const keydown=event=>{if(!$('fight-frame').hidden||event.target?.closest?.('input,select,textarea'))return;if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.code)){event.preventDefault();moveFocus(event.code);}else if(event.code==='Escape'&&seat){event.preventDefault();leave();}};window.addEventListener('keydown',keydown);
  const router=createFrameRouter({origin:launch.origin,source:()=>$('fight-frame').contentWindow,matchId:()=>session?.matchId,onPacket:packet=>session?.receiveFrame(packet)});window.addEventListener('message',router);
- const unload=()=>{suspended=true;music.suspend();client.leaveOnUnload();resetRoom();window.cancelAnimationFrame(raf);raf=null;};window.addEventListener('pagehide',unload);
- const restore=()=>{if(destroyed||!suspended)return;suspended=false;music.resume();pads.reset();if(roster.length){refreshRooms();if(raf===null)raf=window.requestAnimationFrame(menuTick);}};window.addEventListener('pageshow',restore);
- const menuTick=now=>{if(destroyed||suspended)return;if($('fight-frame').hidden){let devices=[];try{devices=window.navigator.getGamepads?.()??[];}catch{}const sample=pads.sample(devices,now,{context:'menu',active:document.hasFocus()&&!document.hidden});settings.controllerSeats=pads.seatIndices();for(const event of sample.events){if(event.type==='navigate'){moveFocus(event.action);}else if(event.type==='press'){void music.unlock();if(event.action==='confirm'){const focused=document.activeElement;if(focused?.tagName==='BUTTON')focused.click();else if(seat&&!peer)$('ready-button').click();}else if(event.action==='back'){if(seat)leave();else screenHost.navigate(withControllerSeats(new URL('index.html',launch),settings.controllerSeats));}else if(event.action==='random'&&seat&&!peer&&roster.length)choose(roster[Math.floor(Math.random()*roster.length)].id);}}}raf=window.requestAnimationFrame(menuTick);};
- try{const response=await fetch(new URL('assets/menu/roster.json',launch),{cache:'no-cache'});if(!response.ok)throw new Error('Fighter selection is unavailable.');const data=await response.json();let corporateUnlocked=false;try{corporateUnlocked=loadClashPreferences(window.localStorage).corporateUnlocked;}catch{}roster=Array.isArray(data.fighters)?demoRoster(data.fighters.filter(f=>/^[a-z0-9-]{1,40}$/.test(f.id)).slice(0,19),{corporateUnlocked}):[];if(!roster.length)throw new Error('Fighter selection is unavailable.');for(const fighter of roster){const button=document.createElement('button');button.type='button';button.dataset.fighter=fighter.id;button.disabled=fighter.enabled!==true;button.className='fighter-card';if(button.disabled)button.setAttribute('aria-label',fighter.name+' — locked');button.setAttribute('aria-pressed','false');const image=document.createElement('img');image.src=new URL(fighter.portrait,launch).href;image.alt='';image.width=90;image.height=90;image.loading='lazy';const name=document.createElement('span');name.textContent=fighter.name;button.append(image,name);button.addEventListener('click',()=>choose(fighter.id));$('fighter-grid').append(button);}if(!destroyed&&!suspended){refreshRooms();raf=window.requestAnimationFrame(menuTick);}}catch(error){status(error.message);$('create-room').disabled=true;$('join-room').disabled=true;}
- return {destroy(){if(destroyed)return;destroyed=true;music.destroy();const previous=seat;resetRoom();if(previous)void client.releaseSeat(previous).catch(()=>{});window.cancelAnimationFrame(raf);raf=null;window.removeEventListener('keydown',keydown);window.removeEventListener('message',router);window.removeEventListener('pagehide',unload);window.removeEventListener('pageshow',restore);window.removeEventListener('blur',blur);window.removeEventListener('focus',focus);}};
+ const unload=()=>{if(suspended)return;suspended=true;++epoch;clearTimers();music.suspend();closeMatch();busy=false;pendingEntry=null;stopped=false;showScreen(seat?'session':'browser');window.cancelAnimationFrame(raf);raf=null;};window.addEventListener('pagehide',unload);
+ const restore=()=>{if(destroyed||!suspended)return;suspended=false;music.resume();pads.reset();if(roster.length){void restoreSeat().then(restored=>{if(!restored&&!destroyed&&!suspended)refreshRooms();});if(raf===null)raf=window.requestAnimationFrame(menuTick);}};window.addEventListener('pageshow',restore);
+ const menuTick=now=>{if(destroyed||suspended)return;if($('fight-frame').hidden){let devices=[];try{devices=window.navigator.getGamepads?.()??[];}catch{}const sample=pads.sample(devices,now,{context:'menu',active:document.hasFocus()&&!document.hidden});settings.controllerSeats=pads.seatIndices();for(const event of sample.events){if(event.type==='navigate'){moveFocus(event.action);}else if(event.type==='press'){void music.unlock();if(event.action==='confirm'){const focused=document.activeElement;if(focused?.tagName==='BUTTON')focused.click();else if(seat&&!peer)$('ready-button').click();}else if(event.action==='back'){if(currentScreen==='selection')showScreen('session',{focus:true});else if(seat)leave();else screenHost.navigate(withControllerSeats(new URL('index.html',launch),settings.controllerSeats));}else if(event.action==='random'&&seat&&!peer&&roster.length){const choices=roster.filter(fighter=>fighter.enabled);const picked=choices[Math.floor(Math.random()*choices.length)];if(picked){fighterPage=Math.floor(roster.indexOf(picked)/8);renderFighterPage();choose(picked.id);}}}}}raf=window.requestAnimationFrame(menuTick);};
+ try{const response=await fetch(new URL('assets/menu/roster.json',launch),{cache:'no-cache'});if(!response.ok)throw new Error('Fighter selection is unavailable.');const data=await response.json();let corporateUnlocked=false;try{corporateUnlocked=loadClashPreferences(window.localStorage).corporateUnlocked;}catch{}roster=Array.isArray(data.fighters)?demoRoster(data.fighters.filter(f=>/^[a-z0-9-]{1,40}$/.test(f.id)).slice(0,19),{corporateUnlocked}):[];if(!roster.length)throw new Error('Fighter selection is unavailable.');for(const fighter of roster){const button=document.createElement('button');button.type='button';button.dataset.fighter=fighter.id;button.disabled=fighter.enabled!==true;button.className='fighter-card';if(button.disabled)button.setAttribute('aria-label',fighter.name+' — locked');button.setAttribute('aria-pressed','false');const image=document.createElement('img');image.src=new URL(fighter.portrait,launch).href;image.alt='';image.width=90;image.height=90;image.loading='lazy';const name=document.createElement('span');name.textContent=fighter.name;button.append(image,name);button.addEventListener('click',()=>choose(fighter.id));$('fighter-grid').append(button);}if(!destroyed&&!suspended){renderFighterPage();if(!await restoreSeat())refreshRooms();raf=window.requestAnimationFrame(menuTick);}}catch(error){status(error.message);$('create-room').disabled=true;$('join-room').disabled=true;}
+ return {destroy(){if(destroyed)return;destroyed=true;music.destroy();screenControls.destroy();const previous=seat;resetRoom();if(previous)void client.releaseSeat(previous).catch(()=>{});window.cancelAnimationFrame(raf);raf=null;window.removeEventListener('keydown',keydown);window.removeEventListener('message',router);window.removeEventListener('pagehide',unload);window.removeEventListener('pageshow',restore);window.removeEventListener('blur',blur);window.removeEventListener('focus',focus);}};
 }
 if(globalThis.document?.getElementById('online-lobby'))mountOnlineLobby();

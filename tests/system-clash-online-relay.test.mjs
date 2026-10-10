@@ -6,6 +6,7 @@ import ts from 'typescript';
 import {createOnlineRelay,createOnlineConnection} from '../public/games/system-clash/play/online-connection.mjs';
 import {ONLINE_VERSION} from '../public/games/system-clash/play/online-protocol.mjs';
 import {createOnlinePeer} from '../public/games/system-clash/play/online-transport.mjs';
+import {createOnlineSession} from '../public/games/system-clash/play/online.mjs';
 const require=createRequire(import.meta.url);
 Module._extensions['.ts']=(module,file)=>module._compile(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,file);
 const {createOnlineRooms}=require('../src/lib/system-clash-online.ts');
@@ -19,10 +20,10 @@ const flush=async()=>{for(let i=0;i<32;i++)await Promise.resolve();};
 async function pair(){
  const rows=new Map(),store={async read(code){return rows.get(code)??null;},async cas(code,old,next){if((rows.get(code)??null)!==old)return false;if(next===null)rows.delete(code);else rows.set(code,next);return true;},async list(){return [...rows.values()];}},rooms=createOnlineRooms({store}),h=await rooms.create('Host'),g=await rooms.join(h.code,'Guest');
  await rooms.select(h.code,h.token,{fighter:'6-bit',ready:true});await rooms.select(h.code,g.token,{fighter:'9-bit',ready:true});
- const timers=new Timers(),received=[[],[]],statuses=[[],[]],ended=[[],[]];
- const clients=[h,g].map((seat,index)=>createOnlineRelay({role:seat.role,room:seat.code,timers,now:()=>timers.now,version:ONLINE_VERSION,relayRequest:value=>rooms.relay(h.code,seat.token,value),onPacket:p=>received[index].push(p),onStatus:s=>statuses[index].push(s),onDisconnect:r=>ended[index].push(r)}));
+ const timers=new Timers(),received=[[],[]],statuses=[[],[]],ended=[[],[]],routes=[null,null];
+ const clients=[h,g].map((seat,index)=>createOnlineRelay({role:seat.role,room:seat.code,timers,now:()=>timers.now,version:ONLINE_VERSION,relayRequest:value=>rooms.relay(h.code,seat.token,value),onPacket:p=>{received[index].push(p);routes[index]?.(p);},onStatus:s=>statuses[index].push(s),onDisconnect:r=>ended[index].push(r)}));
  for(const client of clients)client.start();for(let i=0;i<5;i++){await flush();timers.advance(250);}
- return {clients,timers,received,statuses,ended,rooms,h,g};
+ return {clients,timers,received,statuses,ended,rooms,h,g,routes};
 }
 test('two cloud clients verify the ordinary peer handshake before exchanging controls',async()=>{
  const p=await pair();try{
@@ -133,4 +134,29 @@ test('native latest-state direction rejects forged authority and replay without 
  assert.deepEqual(received[0].map(p=>p.inputSeq),[1,2]);assert.deepEqual(received[1].map(p=>p.type),['snapshot']);
  assert.equal(peers[1].send({type:'snapshot',snapshot:{seq:2}}),false);
  }finally{peers.forEach(p=>p.close());}
+});
+
+
+test('a restored room begins its cloud handshake on the stored match identity',async()=>{
+ const p=await pair();p.clients.forEach(client=>client.close());await p.rooms.resume(p.h.code,p.h.token);
+ for(const seat of [p.h,p.g])await p.rooms.select(p.h.code,seat.token,{fighter:seat.role==='host'?'6-bit':'9-bit',ready:true});
+ for(let id=1;id<3;id++){await p.rooms.begin(p.h.code,p.h.token,{after:id-1});await p.rooms.result(p.h.code,p.h.token,{matchId:id,winner:0});}await p.rooms.begin(p.h.code,p.h.token,{after:2});
+ const ids=[],ended=[],clients=[p.h,p.g].map(seat=>createOnlineConnection({role:seat.role,room:seat.code,matchId:3,RTCPeerConnection:null,timers:p.timers,now:()=>p.timers.now,onDisconnect:reason=>ended.push(reason),relayRequest:value=>{ids.push(...value.packets.map(packet=>JSON.parse(packet.data).matchId));return p.rooms.relay(p.h.code,seat.token,value);}}));
+ try{clients.forEach(client=>client.setMatchId(3));for(let index=0;index<5;index++){await flush();p.timers.advance(250);}assert.ok(clients.every(client=>client.connected));assert.ok(ids.length>0);assert.deepEqual([...new Set(ids)],[3]);assert.deepEqual(ended,[]);}finally{clients.forEach(client=>client.close());}
+});
+
+
+test('a complete room-backed cloud session scores once and carries the result into an immediate rematch',async()=>{
+ const p=await pair(),sessions=[],scores=[[0,0],[0,0]],loads=[[],[]];await p.rooms.begin(p.h.code,p.h.token,{after:0});
+ try{
+  for(const [index,seat]of [p.h,p.g].entries()){
+   const roomState=await p.rooms.poll(p.h.code,seat.token);scores[index]=roomState.wins;
+   sessions[index]=createOnlineSession({seat,roomState,peer:p.clients[index],timers:p.timers,onScore:wins=>{scores[index]=wins;},loadFrame:matchId=>{loads[index].push({matchId,wins:[...scores[index]]});sessions[index].receiveFrame({type:'loaded'});},postFrame:packet=>{if(index===1&&packet.type==='start')sessions[index].receiveFrame({type:'started',matchId:packet.matchId});},onResult:async result=>{const saved=await p.rooms.result(p.h.code,p.h.token,result);scores[0]=saved.wins;},beginMatch:async after=>p.rooms.begin(p.h.code,p.h.token,{after})});
+   p.routes[index]=packet=>sessions[index].receivePeer(packet);
+  }
+  sessions.forEach(session=>session.connected());await advance(p.timers,1500);
+  const result={type:'snapshot',snapshot:{seq:1,matchId:1,state:{phase:'over',winner:0}}};sessions[0].receiveFrame(result);sessions[0].receiveFrame(result);sessions[0].receiveFrame({type:'rematch'});await advance(p.timers,1500);
+  assert.deepEqual((await p.rooms.poll(p.h.code,p.g.token)).wins,[1,0]);assert.deepEqual(sessions.map(session=>session.matchId),[2,2]);assert.deepEqual(loads[1].at(-1),{matchId:2,wins:[1,0]});assert.deepEqual(p.ended,[[],[]]);
+  sessions[0].receiveFrame(result);assert.deepEqual((await p.rooms.poll(p.h.code,p.h.token)).wins,[1,0]);
+ }finally{sessions.forEach(session=>session.destroy());p.clients.forEach(client=>client.close());}
 });

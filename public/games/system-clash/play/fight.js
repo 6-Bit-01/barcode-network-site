@@ -3,9 +3,10 @@ import {loadRemainsArt} from './fight-remains.mjs';
 import {createGameMusic} from './game-music.mjs';
 import {availableControllerItems,canControlMenu} from './fight-menu-controller.mjs';
 import {createGameScreenHost} from './game-screen-host.mjs';
+import {bindGameScreenControls,onlineSessionScore} from './game-screen-controls.mjs';
 import {createMatchOptions,createRoundMenu} from './fight-menus.mjs';
 import {createRoundSet,recordRoundResult,loadClashPreferences,loadMatchRules,saveMatchRules,matchRulesFromURL,withMatchRules} from './fight-rules.mjs';
-import {nextMenuIndex,pauseMenuPolicy,bindTouchControls,toggleDisplayMode} from './fight-ui.mjs';
+import {nextMenuIndex,pauseMenuPolicy,bindTouchControls} from './fight-ui.mjs';
 import {leaveTournamentRun} from './tournament.mjs';
 import {createMatch,advanceMatch,performAction,getFighterView,consumeEvents,FIGHTER_STYLES} from './fight-engine.mjs';
 import {createFightRenderer} from './fight-renderer.mjs';
@@ -38,10 +39,11 @@ let gamepadPlayers=[],windowActive=document.hasFocus();
 let controllerLabel='';
 let screenSuspended=false,roundNumber=1;
 let matchRules=matchRulesFromURL(location.href,loadMatchRules(localStorage)),roundSet=createRoundSet(matchRules);
-const screenHost=createGameScreenHost({onDisplayChange:()=>syncPauseMenu(),onSuspend:()=>{screenSuspended=true;clearInput();effects.setPaused(true);music.suspend();}});
+const screenHost=createGameScreenHost({onDisplayChange:()=>{screenControls.sync();syncPauseMenu();},onSuspend:()=>{screenSuspended=true;clearInput();effects.setPaused(true);music.suspend();}});
+const screenControls=bindGameScreenControls(screenHost);
 const matchOptions=createMatchOptions({rules:matchRules,locked:new URL(location.href).searchParams.has('online')||new URL(location.href).searchParams.has('tournament'),onApply:rules=>{matchRules=rules;saveMatchRules(localStorage,rules);},onClose:()=>{clearInput();syncPauseMenu();}});
 const roundMenu=createRoundMenu({onNext:()=>{roundNumber++;reset(true,undefined,{newSet:false});canvas.focus({preventScroll:true});},onReplay:()=>{reset(true);canvas.focus({preventScroll:true});},onSelect:()=>$('demo-select').click(),onTitle:()=>goTitle()});
-function loading(text,progress=0,failed=false){for(const node of document.querySelectorAll?.('header,main,footer')??[])node.inert=true;$('asset-loading').hidden=false;$('asset-loading-text').textContent=text;$('asset-loading-progress').value=progress;$('asset-loading-retry').hidden=!failed;}
+function loading(text,progress=0,failed=false){for(const node of document.querySelectorAll?.('header:not(.game-screen-bar),main,footer')??[])node.inert=true;$('asset-loading').hidden=false;$('asset-loading-text').textContent=text;$('asset-loading-progress').value=progress;$('asset-loading-retry').hidden=!failed;}
 function updateRoundOutcome(){if(!demoLaunch.enabled||onlineBridge.enabled||inspectTime!==null||motionTime!==null||match?.phase!=='over')return;const next=recordRoundResult(roundSet,{round:roundNumber,winner:match.winner});roundSet=next;if(tournamentOverlay?.active&&roundSet.complete)tournamentOverlay.update({...match,winner:roundSet.winner});else if(!tournamentOverlay?.blocking)roundMenu.show({set:roundSet,round:roundNumber,winner:match.winner,names:match.fighters.map(f=>f.name)});}
 const attackButtons=new Set(['punch','low-punch','kick','low-kick']);
 const watchedKeys = new Set(['KeyA','KeyD','KeyS','KeyW','KeyU','KeyI','KeyJ','KeyK','Space','KeyL','KeyF','ArrowLeft','ArrowRight','ArrowDown','ArrowUp','Digit0','Digit1','Digit2','Digit3','Digit4','Digit5','Digit6','Digit7','Digit8','Numpad0','Numpad1','Numpad2','Numpad3','Numpad4','Numpad5','Numpad6','Numpad7','Numpad8','Enter','KeyP','Escape','KeyR']);
@@ -63,6 +65,8 @@ async function loadFighterPortraits(fighters){
 let previousTravelViews=null,previousTravelPhase=null;
 let onlineCombat=null,tournamentOverlay=null,onlineLoaded=false;
 const launchParams=new URL(location.href).searchParams;
+const sessionScore=onlineSessionScore(launchParams);
+if(sessionScore!==null){$('online-session-score').textContent=sessionScore;$('online-session-score').hidden=false;document.body.classList.add('has-online-session-score');}
 const music=createGameMusic({muted:launchParams.get('sound')==='0'});
 let musicMatchNumber=Math.max(0,(Number(launchParams.get('matchId'))||1)-1);
 music.setPaused(true);music.setScene({screen:'arena',stage:launchParams.get('stage')??'radio-studio'});
@@ -544,8 +548,7 @@ function syncPauseMenu(){
 }
 function handlePauseAction(name){const choices=pauseChoices();if(name.startsWith?.('Arrow')){choices[nextMenuIndex(choices.length,choices.indexOf(document.activeElement),name)]?.focus({preventScroll:true});}else if(name==='confirm'){(choices.includes(document.activeElement)?document.activeElement:choices[0])?.click();}else if(['back','pause'].includes(name)){if(!$('pause-guide').hidden){$('pause-guide').hidden=true;$('pause-controls').setAttribute('aria-expanded','false');$('pause-controls').focus();}else if(match?.phase==='ready'){paused=false;syncPauseMenu();}else togglePause();}}
 function handlePauseKey(event){if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.code)){event.preventDefault();handlePauseAction(event.code);return true;}if(['Escape','KeyP'].includes(event.code)){event.preventDefault();if(!event.repeat)handlePauseAction('back');return true;}if(event.code==='Tab'){const items=[...pauseDialog.querySelectorAll('button,a,input')].filter(x=>!x.disabled&&!x.hidden),index=items.indexOf(document.activeElement);if(event.shiftKey&&index<=0){event.preventDefault();items.at(-1)?.focus();}else if(!event.shiftKey&&index===items.length-1){event.preventDefault();items[0]?.focus();}return true;}return true;}
-async function displayMode(){await screenHost.displayMode();syncPauseMenu();}
-$('fullscreen-fight').addEventListener('click',displayMode);$('pause-fullscreen').addEventListener('click',displayMode);document.addEventListener('fullscreenchange',syncPauseMenu);
+document.addEventListener('fullscreenchange',syncPauseMenu);
 $('demo-menu').addEventListener('click',()=>{if(match?.phase==='ready'){paused=true;clearInput();syncPauseMenu();}else togglePause();});
 pauseDialog.addEventListener('cancel',event=>{event.preventDefault();handlePauseAction('back');});
 $('pause-resume').addEventListener('click',()=>{if(match?.phase==='ready'){paused=false;syncPauseMenu();}else togglePause();});$('pause-restart').addEventListener('click',start);

@@ -40,6 +40,10 @@ export async function POST(req:Request){
    if(!room.host||!room.guest||!room.host.ready||!room.guest.ready)throw new OnlineRoomError("Both players must be ready for a realtime relay.",409);
    return reply(await createOnlineTurnCredentials());
   }
+  if(action==="begin")return reply(await rooms.begin(body.code,key,{after:body.after}));
+  if(action==="result")return reply(await rooms.result(body.code,key,{matchId:body.matchId,winner:body.winner}));
+  if(action==="lobby")return reply(await rooms.lobby(body.code,key));
+  if(action==="resume")return reply(await rooms.resume(body.code,key));
   if(action==="select")return reply(await rooms.select(body.code,key,{fighter:body.fighter,ready:body.ready}));
   if(action==="candidates")return reply(await rooms.candidates(body.code,key,body));
   if(action==="relay")return reply(await rooms.relay(body.code,key,body));

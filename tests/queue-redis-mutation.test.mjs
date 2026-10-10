@@ -1964,3 +1964,74 @@ test("recovery diagnostics identify a rejected Redis credential without exposing
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
   }
 });
+
+test("current public queue reads skip archive storage while preserving owner and sanitized fields", async () => {
+  resetQueueTestState();
+  process.env.UPSTASH_REDIS_REST_URL = "https://redis.example.test";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+  const originalMget = FakeRedis.prototype.mget;
+  try {
+    const { first } = loadIndependentQueueModules();
+    const historical = await first.startNewQueueSession({ title: "Retained archive", purpose: "live_broadcast" });
+    await first.addToQueue(legacyEntry(1));
+    await first.archiveCurrentQueueSession();
+    const current = await first.startNewQueueSession({ title: "Current public show", purpose: "live_broadcast" });
+    await first.setQueueOpen(true);
+    const identity = { ownerHash: "a".repeat(64), submitterToken: "owned-browser" };
+    await first.addToQueue(legacyEntry(2, { submissionOwnerHash: identity.ownerHash, submitterToken: identity.submitterToken, note: "private-owner-note", contactEmail: "private@example.test", signalHoldStatus: "paid" }));
+    await first.addToQueue(legacyEntry(3, { isSimulation: true }));
+    const projection = FakeRedis.values.get("radioQueue:v2:live-session");
+    const fullBytes = Buffer.byteLength(FakeRedis.values.get("radioQueue:v2:sessions"));
+    const compactBytes = Buffer.byteLength(projection) + Buffer.byteLength(FakeRedis.values.get("radioQueue:v2:sessions:mutation-revision"));
+    assert.ok(compactBytes < fullBytes, "the fixture transfers fewer stored-value bytes");
+    console.log(`Public current-read fixture: full ${fullBytes} bytes; compact plus revision ${compactBytes} bytes; ${(100 * (1 - compactBytes / fullBytes)).toFixed(1)}% less`);
+    FakeRedis.values.delete("radioQueue:v2:live-session");
+    const full = await first.getPublicQueueSnapshot(undefined, identity);
+    const sanitized = first.sanitizeQueueSnapshotForPublic(full);
+    FakeRedis.values.set("radioQueue:v2:live-session", projection);
+    for (const sessionId of [undefined, current.session.sessionId]) {
+      FakeRedis.calls.length = 0;
+      const compact = await first.getPublicQueueSnapshot(sessionId, identity);
+      assert.deepEqual(compact, full, "all personal limits, ownership, status, payment projection and track fields retain full-store semantics");
+      assert.deepEqual(first.sanitizeQueueSnapshotForPublic(compact), sanitized);
+      assert.deepEqual(FakeRedis.calls, [["mget", ["radioQueue:v2:live-session", "radioQueue:v2:sessions:mutation-revision"]]], "public live polls must never transfer archived sessions");
+      assert.doesNotMatch(JSON.stringify({ ...compact, ownedTracks: undefined }), /private-owner-note|private@example.test|submissionOwnerHash/);
+    }
+    FakeRedis.calls.length = 0;
+    const archive = await first.getPublicQueueSnapshot(historical.session.sessionId);
+    assert.equal(archive.session.sessionId, historical.session.sessionId);
+    assert.equal(archive.sessionActive, false);
+    assert.ok(FakeRedis.calls.some(([command, key]) => command === "get" && key === "radioQueue:v2:sessions"), "historical reads retain full authority");
+    for (const broken of [null, "{invalid", JSON.stringify({ ...JSON.parse(projection), revision: -1 }), JSON.stringify({ ...JSON.parse(projection), revision: full.revision - 1 })]) {
+      if (broken === null) FakeRedis.values.delete("radioQueue:v2:live-session");
+      else FakeRedis.values.set("radioQueue:v2:live-session", broken);
+      FakeRedis.calls.length = 0;
+      assert.deepEqual(await first.getPublicQueueSnapshot(undefined, identity), full);
+      assert.ok(FakeRedis.calls.some(([command, key]) => command === "get" && key === "radioQueue:v2:sessions"), "invalid or stale projections must fall back");
+    }
+    FakeRedis.values.set("radioQueue:v2:live-session", projection);
+    FakeRedis.prototype.mget = async () => { throw Error("projection unavailable"); };
+    assert.deepEqual(await first.getPublicQueueSnapshot(undefined, identity), full);
+    FakeRedis.prototype.mget = originalMget;
+    await first.archiveCurrentQueueSession();
+    FakeRedis.calls.length = 0;
+    const idle = await first.getPublicQueueSnapshot();
+    assert.equal(idle.session, null);
+    assert.equal(idle.sessionActive, false);
+    assert.deepEqual(idle.queue, []);
+    assert.deepEqual(FakeRedis.calls, [["mget", ["radioQueue:v2:live-session", "radioQueue:v2:sessions:mutation-revision"]]], "idle polling resets without reading archives");
+    await first.startNewQueueSession({ title: "Sealed rehearsal", purpose: "private_broadcast_test" });
+    await first.addToQueue(legacyEntry(4, { note: "sealed-note" }));
+    const privateSnapshot = await first.getPublicQueueSnapshot();
+    const sealed = first.sanitizeQueueSnapshotForPublic(privateSnapshot);
+    assert.equal(sealed.session, null);
+    assert.equal(sealed.sessionActive, false);
+    assert.equal(sealed.suppressPublicLiveStatus, true);
+    assert.deepEqual(sealed.queue, []);
+    assert.doesNotMatch(JSON.stringify(sealed), /Sealed rehearsal|sealed-note/);
+  } finally {
+    FakeRedis.prototype.mget = originalMget;
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+  }
+});

@@ -81,3 +81,26 @@ test('archive contract accepts only revisioned private selection and valid bound
  assert.equal(parseSongDraft({...draft,selectedTrackId:track.id,tracks:[track]}).selectedTrackId,track.id);
  for(const value of [{...draft,selectedTrackId:track.id},{...draft,tracks:[track,track]},{...draft,tracks:Array(41).fill(track)},{...draft,tracks:[{...track,createdAt:-1}]}])assert.throws(()=>parseSongDraft(value));
 });
+
+
+test('song refusal proxy preserves only safe reason and UTC reset receipts',async()=>{
+ const {proxyMemberSongRequest}=load('member-tools');
+ for(const errorCode of ['BUDGET_DAILY_TOKENS','BUDGET_DAILY_COST','BUDGET_MONTHLY_COST','BUDGET_PRICING_UNAVAILABLE','PROVIDER_BILLING_REQUIRED','BUDGET_UNAVAILABLE','PROVIDER_UNAVAILABLE']) {
+  const resetAt='2026-10-11T00:00:00Z';const response=await proxyMemberSongRequest(request(),config,async()=>Response.json({draft:{...draft,errorCode,resetAt,prompt:'PRIVATE',model:'PRIVATE',budgetLedger:'PRIVATE'}}));
+  assert.equal(response.status,200);const body=await response.json();assert.equal(body.draft.errorCode,errorCode);assert.equal(body.draft.resetAt,resetAt);assert.equal(body.draft.lyrics,draft.lyrics);assert.doesNotMatch(JSON.stringify(body),/PRIVATE/);
+ }
+ const {parseSongDraft}=load('barcode-song-contract');
+ for(const resetAt of ['private billing text','2026-10-11',42,'2026-10-11T00:00:00+01:00','2026-99-11T00:00:00Z','2026-02-30T00:00:00Z'])assert.throws(()=>parseSongDraft({...draft,errorCode:'BUDGET_DAILY_COST',resetAt}));
+ assert.equal(parseSongDraft({...draft,resetAt:null}).resetAt,null);
+ assert.equal(parseSongDraft({...draft,resetAt:'2026-10-11T00:00:00+00:00'}).resetAt,'2026-10-11T00:00:00+00:00');
+ assert.equal(parseSongDraft(draft).resetAt,undefined);
+});
+
+test('worker proxy accepts failure-only safe allowance reset receipt',async()=>{
+ const {proxyMemberSongWorkerRequest}=load('member-tools');let sent;
+ const receipt={commandId:operation.requestId,leaseId:operation.requestId,outcome:'failed',errorCode:'BUDGET_DAILY_COST',resetAt:'2026-10-11T00:00:00Z'};
+ const post=body=>new Request('https://www.barcode-network.com/api/bnl/song/worker',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+ const fetcher=async(_,options)=>{sent=JSON.parse(options.body);return Response.json({ok:true});};
+ assert.equal((await proxyMemberSongWorkerRequest(post(receipt),config,fetcher)).status,200);assert.deepEqual(sent,receipt);
+ for(const body of [{...receipt,resetAt:'private'},{...receipt,resetAt:123},{...receipt,outcome:'applied',errorCode:undefined,result:{title:'a',lyrics:'b',style:'c'}}])assert.equal((await proxyMemberSongWorkerRequest(post(body),config,fetcher)).status,400);
+});

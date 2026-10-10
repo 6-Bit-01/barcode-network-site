@@ -185,3 +185,16 @@ test('new songs start fresh Undo history and cannot erase or replace distinct au
  await submit(a,command(second.revision,'lyrics'));c=await take(a);await finish(a,c,{...secondSong,lyrics:'Refined second verse'});second=(await(await read(a)).json()).draft;assert.deepEqual(second.previous,secondSong);assert.equal((await submit(a,command(second.revision,'undo'))).status,200);second=(await(await read(a)).json()).draft;assert.equal(second.lyrics,secondSong.lyrics);assert.equal(second.style,secondSong.style);assert.equal(second.tracks.length,2);
  await submit(a,command(second.revision,'select',{trackId:first.selectedTrackId}));assert.equal((await(await read(a)).json()).draft.lyrics,seed.lyrics);
 });
+
+test('precise refusal receipts preserve saved songs, exact retries and reset lineage',async t=>{
+ const a=await fixture(t);let state=await generated(a);
+ for(const errorCode of ['BUDGET_DAILY_TOKENS','BUDGET_DAILY_COST','BUDGET_MONTHLY_COST','BUDGET_PRICING_UNAVAILABLE','PROVIDER_BILLING_REQUIRED']){
+  const before=state;await submit(a,command(state.revision,'lyrics'));const c=await take(a);
+  const body={commandId:c.id,leaseId:c.leaseId,outcome:'failed',errorCode,resetAt:errorCode==='BUDGET_DAILY_TOKENS'?'2026-10-11T00:00:00+00:00':'2026-10-11T00:00:00Z'};
+  for(const resetAt of ['private',42,'2026-10-11T00:00:00+01:00'])assert.equal((await a.request(receipt,{...body,resetAt})).status,400);
+  const first=await a.request(receipt,body);assert.equal(first.status,200);const saved=await first.json();assert.deepEqual(await(await a.request(receipt,body)).json(),saved);
+  assert.equal((await a.request(receipt,{...body,resetAt:'2026-10-12T00:00:00Z'})).status,409);
+  state=(await(await read(a)).json()).draft;assert.equal(state.errorCode,errorCode);assert.equal(state.resetAt,body.resetAt);assert.equal(state.lyrics,before.lyrics);assert.equal(state.style,before.style);assert.deepEqual(state.tracks,before.tracks);assert.deepEqual(state.previous,before.previous);
+ }
+ await submit(a,command(state.revision,'lyrics'));state=(await(await read(a)).json()).draft;assert.equal(state.resetAt,undefined);const c=await take(a);assert.equal((await a.request(receipt,{commandId:c.id,leaseId:c.leaseId,outcome:'applied',result:seed,resetAt:'2026-10-11T00:00:00Z'})).status,400);await finish(a,c);state=(await(await read(a)).json()).draft;assert.equal(state.resetAt,undefined);
+});

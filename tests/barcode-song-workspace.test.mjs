@@ -295,3 +295,20 @@ test('exactly three plainly labeled copy controls copy only their matching curre
   await ui.find('button','Regenerate style prompt').props.onClick();await ui.settle();await checkCopies();
  }
 });
+
+test('year guidance uses the existing musical-direction field and submits a requested year range intact',async()=>{
+ const requests=[];
+ const ui=harness('BarcodeSongWorkspace',{access:owner},async(path,options)=>{
+  if(options?.method==='POST')requests.push(JSON.parse(options.body));
+  return response({draft:song()});
+ });
+ await ui.settle();
+ const field=ui.nodes().find(n=>n.type==='label'&&ui.textOf(n).includes('Genre, year or musical direction'));
+ assert.ok(field,'The direction field must clearly advertise years');
+ const input=ui.nodes().find(n=>n.type==='textarea'&&n.props.placeholder?.includes('year range'));
+ assert.ok(input);assert.equal(ui.nodes().filter(n=>n.type==='textarea'&&n.props.placeholder).length,5);
+ const direction='Piano-led rock, 1965–1975; a clear 1971 reference';
+ input.props.onChange({target:{value:direction}});await ui.settle();
+ await ui.find('button','Generate song').props.onClick();await ui.settle();
+ assert.equal(requests[0].options.musicalDirection,direction);
+});

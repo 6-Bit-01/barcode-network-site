@@ -8,7 +8,7 @@ import { countLyricsWords, parseSongDraft, type SongDraft, type SongOptions, typ
 const blank: SongText = { title: "", lyrics: "", style: "" };
 const directions: [keyof SongOptions, string, string][] = [
  ["idea", "Idea or topic", "Leave blank and let BNL choose."],
- ["musicalDirection", "Genre or musical direction", "Any genres, era, instruments or influences. Optional."],
+ ["musicalDirection", "Genre, year or musical direction", "Genre, specific year or year range, instruments or influences. Optional."],
  ["mood", "Mood", "Optional tone or atmosphere."],
  ["lengthStructure", "Length and structure", "Optional sections or timing. Written toward five minutes or less."],
  ["revisionInstructions", "Changes for the next pass", "What should BNL change? Optional."]

@@ -2,7 +2,7 @@ import { resolveBalladArtistLinks } from "@/lib/bnl-ballad-artists";
 import { randomUUID } from "crypto";
 import { head } from "@vercel/blob";
 import { NextResponse } from "next/server";
-import { verifyAdminRequest } from "@/lib/auth";
+import { verifyBalladAdminRequest } from "@/lib/bnl-ballad-access";
 import { readBallad, saveBallad, readBalladConfig, saveBalladConfig, balladWorkspaceCatalog, requireBalladShow } from "@/lib/bnl-ballads-store";
 import { publishBallad, selectBalladAudio, archiveBallad, saveBalladLinerNotes, saveBalladArtistLinks, balladArtistLinksForVersion, BALLAD_LINER_NOTE_FIELDS, type BalladOptions, type BalladPresentation, type BalladCommand } from "@/lib/bnl-ballads";
 
@@ -19,7 +19,7 @@ function httpsUrl(value: unknown, host?: string) {
   return url.toString();
 }
 export async function GET(req: Request) {
-  if (!await verifyAdminRequest(req)) return json({ error: "Unauthorized" }, 401);
+  if (!await verifyBalladAdminRequest(req)) return json({ error: "Unauthorized" }, 401);
   try {
     const { shows, artists } = await balladWorkspaceCatalog();
     const id = new URL(req.url).searchParams.get("showId") || shows[0]?.sessionId;
@@ -28,7 +28,7 @@ export async function GET(req: Request) {
   } catch { return json({ error: "Ballad workspace is temporarily unavailable." }, 503); }
 }
 export async function POST(req: Request) {
-  if (!await verifyAdminRequest(req)) return json({ error: "Unauthorized" }, 401);
+  if (!await verifyBalladAdminRequest(req)) return json({ error: "Unauthorized" }, 401);
   try {
     const raw = await req.text();
     if (Buffer.byteLength(raw) > 180000) return json({ error: "Draft is too large." }, 413);

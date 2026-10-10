@@ -101,7 +101,7 @@ test("public eligibility revocation immediately removes a released ballad", asyn
   assert.equal((await store.listPublicBallads()).length, 0);
 });
 test("API rejects unsigned admin and bot writes before reading storage", async () => {
-  const route = load("src/app/api/admin/ballads/route.ts", { "@vercel/blob": { head() { throw new Error("must not run"); } }, "@/lib/auth": { verifyAdminRequest: async () => false }, "@/lib/bnl-ballads-store": {}, "@/lib/bnl-ballads": contract });
+  const route = load("src/app/api/admin/ballads/route.ts", { "@vercel/blob": { head() { throw new Error("must not run"); } }, "@/lib/bnl-ballad-access": { verifyBalladAdminRequest: async () => false }, "@/lib/bnl-ballads-store": {}, "@/lib/bnl-ballads": contract });
   assert.equal((await route.POST(new Request("https://test/api/admin/ballads", { method: "POST", body: "{}" }))).status, 401);
   const bot = load("src/app/api/bnl/ballads/route.ts", { "@/lib/bnl-journal-contract": { authenticateBNLJournalRequest: () => false }, "@/lib/bnl-ballads-store": {}, "@/lib/bnl-ballads": contract });
   assert.equal((await bot.GET(new Request("https://test/api/bnl/ballads"))).status, 401);
@@ -205,7 +205,7 @@ test("producer note edits follow edit and restore receipts without changing olde
 test("authenticated Save track story persists only to its requested version and queues no generation", async () => {
   const { store } = setup();
   await store.saveBallad(draft(), 0);
-  const route = load("src/app/api/admin/ballads/route.ts", { "@vercel/blob": { head() { throw new Error("must not run"); } }, "@/lib/auth": { verifyAdminRequest: async () => true }, "@/lib/bnl-ballads-store": store, "@/lib/bnl-ballads": contract });
+  const route = load("src/app/api/admin/ballads/route.ts", { "@vercel/blob": { head() { throw new Error("must not run"); } }, "@/lib/bnl-ballad-access": { verifyBalladAdminRequest: async () => true }, "@/lib/bnl-ballads-store": store, "@/lib/bnl-ballads": contract });
   const save = (revision, versionId = "draft-1") => route.POST(new Request("https://test/api/admin/ballads", { method: "POST", body: JSON.stringify({ action: "saveLinerNotes", showId: "show-1", revision, versionId, linerNotes: notes }) }));
   assert.equal((await save(1)).status, 200);
   const saved = await store.readBallad("show-1");
@@ -234,7 +234,7 @@ test("polish uses the viewed version while concurrency stays pinned to latest", 
   const { store } = setup();
   const doc = draft(); doc.versions.push({ ...version, id: "draft-2", ordinal: 2, parentId: "draft-1" });
   await store.saveBallad(doc, 0);
-  const route = load("src/app/api/admin/ballads/route.ts", { "@vercel/blob": {}, "@/lib/auth": { verifyAdminRequest: async () => true }, "@/lib/bnl-ballads-store": store, "@/lib/bnl-ballads": contract });
+  const route = load("src/app/api/admin/ballads/route.ts", { "@vercel/blob": {}, "@/lib/bnl-ballad-access": { verifyBalladAdminRequest: async () => true }, "@/lib/bnl-ballads-store": store, "@/lib/bnl-ballads": contract });
   const request = sourceVersion => route.POST(new Request("https://test/api/admin/ballads", { method: "POST", body: JSON.stringify({ action: "polish", showId: "show-1", revision: 1, sourceVersion }) }));
   assert.equal((await request("other-show-version")).status, 400);
   const response = await request("draft-1");
@@ -269,7 +269,7 @@ test("artist suggestions rank aliases and typos without excluding punctuation in
 
 test("workspace artist catalog contains only individual public Archive destinations", async () => {
   const { store } = setup();
-  const route = load("src/app/api/admin/ballads/route.ts", { "@vercel/blob": {}, "@/lib/auth": { verifyAdminRequest: async () => true }, "@/lib/bnl-ballads-store": store, "@/lib/bnl-ballads": contract });
+  const route = load("src/app/api/admin/ballads/route.ts", { "@vercel/blob": {}, "@/lib/bnl-ballad-access": { verifyBalladAdminRequest: async () => true }, "@/lib/bnl-ballads-store": store, "@/lib/bnl-ballads": contract });
   const response = await route.GET(new Request("https://test/api/admin/ballads?showId=show-1"));
   assert.equal(response.status, 200);
   const data = await response.json();
@@ -284,7 +284,7 @@ const ashLink = { name: "Ash", ...profile("Ash Flowers") };
 test("artist link API validates current destinations and uses canonical labels with stale-write protection", async () => {
   const { store, setArtists } = setup();
   await store.saveBallad(draft(), 0);
-  const route = load("src/app/api/admin/ballads/route.ts", { "@vercel/blob": {}, "@/lib/auth": { verifyAdminRequest: async () => true }, "@/lib/bnl-ballads-store": store, "@/lib/bnl-ballads": contract });
+  const route = load("src/app/api/admin/ballads/route.ts", { "@vercel/blob": {}, "@/lib/bnl-ballad-access": { verifyBalladAdminRequest: async () => true }, "@/lib/bnl-ballads-store": store, "@/lib/bnl-ballads": contract });
   const post = body => route.POST(new Request("https://test/api/admin/ballads", { method: "POST", body: JSON.stringify({ showId: "show-1", revision: 1, versionId: "draft-1", action: "saveArtistLinks", ...body }) }));
   for (const bad of [[{ name: "Lost Marbles", projectKey: "private persona" }], [{ name: "Both", projectKey: "mr nice guy and lostmarbles" }], [{ name: "Wrong", projectKey: "javascript:alert(1)" }], [lostLink, lostLink], Array.from({ length: 51 }, () => lostLink), "not a list"]) {
     assert.equal((await post({ artistLinks: bad })).status, 400);
